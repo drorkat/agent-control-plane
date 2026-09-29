@@ -8,6 +8,7 @@ import {
   FolderKanban,
   LayoutDashboard,
   ListTodo,
+  Settings,
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
   { label: 'Tasks', href: '/tasks', icon: ListTodo },
   { label: 'Runs', href: '/runs', icon: Activity },
   { label: 'Approvals', href: '/approvals', icon: ShieldCheck, badge: '3' },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar({

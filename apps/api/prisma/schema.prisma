@@ -25,6 +25,7 @@ model Organization {
   runs      Run[]
   approvals Approval[]
   auditLogs AuditLog[]
+  providerCredentials ProviderCredential[]
 }
 
 model User {
@@ -173,4 +174,23 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([createdAt])
+}
+
+// A provider API key (BYOK), managed through the UI and encrypted at rest
+// (AES-256-GCM). The plaintext key is never stored or returned by the API.
+model ProviderCredential {
+  id             String   @id @default(uuid())
+  organizationId String
+  provider       String // anthropic | openai | ...
+  label          String?
+  ciphertext     String
+  iv             String
+  authTag        String
+  last4          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
 }
