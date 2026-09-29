@@ -19,6 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 
 type Project = {
@@ -52,7 +54,7 @@ function formatDate(iso: string): string {
   }
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({ project, t }: { project: Project; t: TranslateFn }) {
   const connected = Boolean(project.repoUrl);
   return (
     <Link
@@ -69,26 +71,26 @@ function ProjectCard({ project }: { project: Project }) {
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{project.name}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Created {formatDate(project.createdAt)}
+                  {t('common.createdOn', { date: formatDate(project.createdAt) })}
                 </p>
               </div>
             </div>
-            <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+            <ChevronRight className="mt-1 size-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
           </div>
 
           <p className="mt-3 line-clamp-2 min-h-[2.5rem] text-sm text-muted-foreground">
-            {project.description?.trim() || 'No description provided.'}
+            {project.description?.trim() || t('common.noDescription')}
           </p>
 
           <div className="mt-4 flex items-center gap-2 pt-1">
             {connected ? (
               <Badge variant="success">
                 <GitBranch className="size-3" />
-                Repo connected
+                {t('common.repoConnected')}
               </Badge>
             ) : (
               <Badge variant="neutral" dot>
-                No repo
+                {t('common.noRepo')}
               </Badge>
             )}
           </div>
@@ -120,6 +122,7 @@ function ProjectCardSkeleton() {
 }
 
 export default function ProjectsPage() {
+  const { t } = useI18n();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -138,11 +141,11 @@ export default function ProjectsPage() {
       const data = await api.get<Project[]>('/projects');
       setProjects(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load projects');
+      setError(err instanceof Error ? err.message : t('projects.loadError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     void load();
@@ -169,7 +172,7 @@ export default function ProjectsPage() {
     event.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setFormError('Project name is required.');
+      setFormError(t('projects.form.nameRequired'));
       return;
     }
     setSubmitting(true);
@@ -185,7 +188,7 @@ export default function ProjectsPage() {
       resetForm();
       setShowForm(false);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to create project');
+      setFormError(err instanceof Error ? err.message : t('projects.createError'));
     } finally {
       setSubmitting(false);
     }
@@ -200,14 +203,14 @@ export default function ProjectsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Projects</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                {t('projects.title')}
+              </h1>
               {!loading && !error && hasProjects && (
                 <Badge variant="neutral">{projects.length}</Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Group agents, tasks, and runs by the codebase or initiative they belong to.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('projects.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -218,12 +221,12 @@ export default function ProjectsPage() {
               {showForm ? (
                 <>
                   <X />
-                  Cancel
+                  {t('common.cancel')}
                 </>
               ) : (
                 <>
                   <Plus />
-                  New project
+                  {t('projects.new')}
                 </>
               )}
             </Button>
@@ -237,13 +240,13 @@ export default function ProjectsPage() {
               <form onSubmit={handleCreate} className="space-y-4" noValidate>
                 <div className="space-y-1.5">
                   <label htmlFor="project-name" className="text-sm font-medium text-foreground">
-                    Name <span className="text-danger">*</span>
+                    {t('common.name')} <span className="text-danger">*</span>
                   </label>
                   <Input
                     id="project-name"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    placeholder="e.g. Billing Service"
+                    placeholder={t('projects.form.namePlaceholder')}
                     maxLength={200}
                     autoFocus
                     disabled={submitting}
@@ -255,13 +258,13 @@ export default function ProjectsPage() {
                     htmlFor="project-description"
                     className="text-sm font-medium text-foreground"
                   >
-                    Description
+                    {t('common.description')}
                   </label>
                   <textarea
                     id="project-description"
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
-                    placeholder="What is this project about?"
+                    placeholder={t('projects.form.descriptionPlaceholder')}
                     maxLength={2000}
                     rows={3}
                     disabled={submitting}
@@ -271,7 +274,7 @@ export default function ProjectsPage() {
 
                 <div className="space-y-1.5">
                   <label htmlFor="project-repo" className="text-sm font-medium text-foreground">
-                    Repository URL
+                    {t('projects.form.repoUrl')}
                   </label>
                   <Input
                     id="project-repo"
@@ -281,14 +284,12 @@ export default function ProjectsPage() {
                     maxLength={500}
                     disabled={submitting}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Optional. Link a Git repository so agents can work against it.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t('projects.form.repoHint')}</p>
                 </div>
 
                 <div className="flex flex-col-reverse items-stretch gap-2 pt-1 sm:flex-row sm:items-center sm:justify-end">
                   {formError && (
-                    <p className="flex items-center gap-1.5 text-sm text-danger sm:mr-auto">
+                    <p className="flex items-center gap-1.5 text-sm text-danger sm:me-auto">
                       <TriangleAlert className="size-4 shrink-0" />
                       {formError}
                     </p>
@@ -300,18 +301,18 @@ export default function ProjectsPage() {
                     onClick={closeForm}
                     disabled={submitting}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                   <Button type="submit" size="md" disabled={submitting || !name.trim()}>
                     {submitting ? (
                       <>
                         <Loader2 className="animate-spin" />
-                        Creating…
+                        {t('common.creating')}
                       </>
                     ) : (
                       <>
                         <Plus />
-                        Create project
+                        {t('projects.create')}
                       </>
                     )}
                   </Button>
@@ -336,12 +337,14 @@ export default function ProjectsPage() {
                   <TriangleAlert className="size-5" />
                 </span>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">Couldn&apos;t load projects</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {t('projects.loadErrorTitle')}
+                  </p>
                   <p className="mx-auto max-w-sm text-sm text-muted-foreground">{error}</p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => void load()}>
                   <RefreshCw />
-                  Try again
+                  {t('common.tryAgain')}
                 </Button>
               </div>
             </CardContent>
@@ -349,7 +352,7 @@ export default function ProjectsPage() {
         ) : hasProjects ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {projects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <ProjectCard key={project.id} project={project} t={t} />
             ))}
           </div>
         ) : (
@@ -358,16 +361,15 @@ export default function ProjectsPage() {
               <FolderPlus className="size-5" />
             </span>
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">No projects yet</p>
+              <p className="text-sm font-semibold text-foreground">{t('projects.emptyTitle')}</p>
               <p className="mx-auto max-w-xs text-sm text-muted-foreground">
-                Create your first project to start organizing agents, tasks, and runs around a
-                codebase.
+                {t('projects.emptyDesc')}
               </p>
             </div>
             {!showForm && (
               <Button variant="secondary" size="sm" onClick={openForm}>
                 <Plus />
-                New project
+                {t('projects.new')}
               </Button>
             )}
           </div>

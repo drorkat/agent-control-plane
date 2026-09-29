@@ -19,12 +19,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 import {
   AgentRef,
-  PRIORITY_OPTIONS,
   ProjectRef,
   Task,
+  TASK_PRIORITY_ORDER,
   TASK_STATUS_ORDER,
   taskPriorityLabel,
   taskPriorityVariant,
@@ -67,6 +69,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function TasksPage() {
+  const { t } = useI18n();
   const [tasks, setTasks] = React.useState<Task[]>([]);
   const [projects, setProjects] = React.useState<ProjectRef[]>([]);
   const [agents, setAgents] = React.useState<AgentRef[]>([]);
@@ -91,11 +94,11 @@ export default function TasksPage() {
       setProjects(projectsData);
       setAgents(agentsData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tasks');
+      setError(err instanceof Error ? err.message : t('tasks.loadError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     void load();
@@ -141,11 +144,11 @@ export default function TasksPage() {
     event.preventDefault();
     const title = form.title.trim();
     if (!title) {
-      setFormError('Task title is required.');
+      setFormError(t('tasks.form.titleRequired'));
       return;
     }
     if (!form.projectId) {
-      setFormError('Please select a project.');
+      setFormError(t('tasks.form.selectProjectError'));
       return;
     }
     setSubmitting(true);
@@ -161,7 +164,7 @@ export default function TasksPage() {
       setShowForm(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to create task');
+      setFormError(err instanceof Error ? err.message : t('tasks.createError'));
     } finally {
       setSubmitting(false);
     }
@@ -177,24 +180,24 @@ export default function TasksPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Tasks</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                {t('tasks.title')}
+              </h1>
               {!loading && !error && hasTasks && (
                 <Badge variant="neutral">{tasks.length}</Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Track work across your projects — from backlog to done — and assign it to agents.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('tasks.subtitle')}</p>
           </div>
           {showForm ? (
             <Button variant="secondary" size="md" onClick={closeForm}>
               <X />
-              Cancel
+              {t('common.cancel')}
             </Button>
           ) : (
             <Button size="md" onClick={openForm}>
               <Plus />
-              New task
+              {t('tasks.new')}
             </Button>
           )}
         </div>
@@ -206,13 +209,13 @@ export default function TasksPage() {
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
                 <div className="space-y-1.5">
                   <label htmlFor="task-title" className={labelClass}>
-                    Title <span className="text-danger">*</span>
+                    {t('tasks.form.title')} <span className="text-danger">*</span>
                   </label>
                   <Input
                     id="task-title"
                     required
                     autoFocus
-                    placeholder="e.g. Fix flaky checkout test"
+                    placeholder={t('tasks.form.titlePlaceholder')}
                     maxLength={200}
                     value={form.title}
                     onChange={(e) => updateField('title', e.target.value)}
@@ -223,7 +226,7 @@ export default function TasksPage() {
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <label htmlFor="task-project" className={labelClass}>
-                      Project <span className="text-danger">*</span>
+                      {t('tasks.form.project')} <span className="text-danger">*</span>
                     </label>
                     <select
                       id="task-project"
@@ -234,7 +237,9 @@ export default function TasksPage() {
                       disabled={submitting || noProjects}
                     >
                       <option value="" disabled>
-                        {noProjects ? 'No projects available' : 'Select a project'}
+                        {noProjects
+                          ? t('tasks.form.noProjectsAvailable')
+                          : t('tasks.form.selectProject')}
                       </option>
                       {projects.map((project) => (
                         <option key={project.id} value={project.id}>
@@ -246,7 +251,7 @@ export default function TasksPage() {
 
                   <div className="space-y-1.5">
                     <label htmlFor="task-agent" className={labelClass}>
-                      Assignee
+                      {t('tasks.form.assignee')}
                     </label>
                     <select
                       id="task-agent"
@@ -255,7 +260,7 @@ export default function TasksPage() {
                       onChange={(e) => updateField('assignedAgentId', e.target.value)}
                       disabled={submitting}
                     >
-                      <option value="">Unassigned</option>
+                      <option value="">{t('common.unassigned')}</option>
                       {agents.map((agent) => (
                         <option key={agent.id} value={agent.id}>
                           {agent.name}
@@ -266,7 +271,7 @@ export default function TasksPage() {
 
                   <div className="space-y-1.5">
                     <label htmlFor="task-priority" className={labelClass}>
-                      Priority
+                      {t('common.priority')}
                     </label>
                     <select
                       id="task-priority"
@@ -275,9 +280,9 @@ export default function TasksPage() {
                       onChange={(e) => updateField('priority', e.target.value)}
                       disabled={submitting}
                     >
-                      {PRIORITY_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
+                      {TASK_PRIORITY_ORDER.map((value) => (
+                        <option key={value} value={value}>
+                          {taskPriorityLabel(value, t)}
                         </option>
                       ))}
                     </select>
@@ -286,9 +291,9 @@ export default function TasksPage() {
 
                 {noProjects && (
                   <p className="text-xs text-muted-foreground">
-                    You need a project before you can create a task.{' '}
+                    {t('tasks.form.needProject')}{' '}
                     <Link href="/projects" className="font-medium text-primary hover:underline">
-                      Create one first
+                      {t('tasks.form.createOneFirst')}
                     </Link>
                     .
                   </p>
@@ -309,7 +314,7 @@ export default function TasksPage() {
                     onClick={closeForm}
                     disabled={submitting}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     type="submit"
@@ -319,12 +324,12 @@ export default function TasksPage() {
                     {submitting ? (
                       <>
                         <Loader2 className="animate-spin" />
-                        Creating…
+                        {t('common.creating')}
                       </>
                     ) : (
                       <>
                         <Plus />
-                        Create task
+                        {t('tasks.create')}
                       </>
                     )}
                   </Button>
@@ -338,9 +343,9 @@ export default function TasksPage() {
         {loading ? (
           <BoardSkeleton />
         ) : error ? (
-          <ErrorState message={error} onRetry={load} />
+          <ErrorState message={error} onRetry={load} t={t} />
         ) : !hasTasks ? (
-          <EmptyState onCreate={openForm} />
+          <EmptyState onCreate={openForm} t={t} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             {TASK_STATUS_ORDER.map((status) => {
@@ -354,7 +359,7 @@ export default function TasksPage() {
                         aria-hidden
                       />
                       <h2 className="text-sm font-semibold text-foreground">
-                        {taskStatusLabel(status)}
+                        {taskStatusLabel(status, t)}
                       </h2>
                     </div>
                     <Badge variant="neutral">{columnTasks.length}</Badge>
@@ -363,7 +368,7 @@ export default function TasksPage() {
                   <div className="flex flex-col gap-3">
                     {columnTasks.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-8 text-center text-xs text-muted-foreground">
-                        No tasks
+                        {t('tasks.board.noTasks')}
                       </div>
                     ) : (
                       columnTasks.map((task) => (
@@ -376,6 +381,7 @@ export default function TasksPage() {
                               ? agentName.get(task.assignedAgentId)
                               : undefined
                           }
+                          t={t}
                         />
                       ))
                     )}
@@ -394,10 +400,12 @@ function TaskCard({
   task,
   projectName,
   agentName,
+  t,
 }: {
   task: Task;
   projectName?: string;
   agentName?: string;
+  t: TranslateFn;
 }) {
   return (
     <Link
@@ -408,26 +416,26 @@ function TaskCard({
         <CardContent className="flex flex-col gap-3 p-4">
           <div className="flex items-start justify-between gap-2">
             <p className="line-clamp-2 text-sm font-semibold text-foreground">{task.title}</p>
-            <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+            <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground/60 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-muted-foreground rtl:-scale-x-100 rtl:group-hover:-translate-x-0.5" />
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant={taskPriorityVariant(task.priority)}>
-              {taskPriorityLabel(task.priority)}
+              {taskPriorityLabel(task.priority, t)}
             </Badge>
             <Badge variant={taskStatusVariant(task.status)} dot>
-              {taskStatusLabel(task.status)}
+              {taskStatusLabel(task.status, t)}
             </Badge>
           </div>
 
           <div className="space-y-1 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <FolderKanban className="size-3.5 shrink-0" />
-              <span className="truncate">{projectName ?? 'Unknown project'}</span>
+              <span className="truncate">{projectName ?? t('tasks.card.unknownProject')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Bot className="size-3.5 shrink-0" />
-              <span className="truncate">{agentName ?? 'Unassigned'}</span>
+              <span className="truncate">{agentName ?? t('common.unassigned')}</span>
             </div>
           </div>
         </CardContent>
@@ -468,39 +476,45 @@ function BoardSkeleton() {
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ onCreate, t }: { onCreate: () => void; t: TranslateFn }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-card text-muted-foreground shadow-xs ring-1 ring-border">
         <ListTodo className="size-5" />
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">No tasks yet</p>
-        <p className="mx-auto max-w-xs text-sm text-muted-foreground">
-          Create your first task to start planning work and delegating it to your agents.
-        </p>
+        <p className="text-sm font-semibold text-foreground">{t('tasks.emptyTitle')}</p>
+        <p className="mx-auto max-w-xs text-sm text-muted-foreground">{t('tasks.emptyDesc')}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onCreate}>
         <Plus />
-        New task
+        {t('tasks.new')}
       </Button>
     </div>
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+  t,
+}: {
+  message: string;
+  onRetry: () => void;
+  t: TranslateFn;
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-danger/30 bg-danger/5 px-6 py-16 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-card text-danger shadow-xs ring-1 ring-danger/25">
         <TriangleAlert className="size-5" />
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">Couldn&apos;t load tasks</p>
+        <p className="text-sm font-semibold text-foreground">{t('tasks.loadErrorTitle')}</p>
         <p className="mx-auto max-w-xs text-sm text-muted-foreground">{message}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onRetry}>
         <RefreshCw />
-        Try again
+        {t('common.tryAgain')}
       </Button>
     </div>
   );

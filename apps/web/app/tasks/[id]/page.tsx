@@ -30,11 +30,12 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 import {
   AgentRef,
   ProjectRef,
-  STATUS_OPTIONS,
+  TASK_STATUS_ORDER,
   Task,
   taskPriorityLabel,
   taskPriorityVariant,
@@ -59,13 +60,14 @@ function formatDateTime(iso: string): string {
 }
 
 function BackLink() {
+  const { t } = useI18n();
   return (
     <Link
       href="/tasks"
       className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      <ArrowLeft className="size-4" />
-      Back to tasks
+      <ArrowLeft className="size-4 rtl:-scale-x-100" />
+      {t('tasks.detail.back')}
     </Link>
   );
 }
@@ -85,12 +87,13 @@ function MetaRow({
         <Icon className="size-4 shrink-0" />
         {label}
       </span>
-      <span className="min-w-0 text-right text-sm font-medium text-foreground">{children}</span>
+      <span className="min-w-0 text-end text-sm font-medium text-foreground">{children}</span>
     </div>
   );
 }
 
 export default function TaskDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ id: string | string[] }>();
   const rawId = params?.id;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
@@ -123,11 +126,11 @@ export default function TaskDetailPage() {
       setProjects(projectsData);
       setAgents(agentsData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load task');
+      setError(err instanceof Error ? err.message : t('tasks.loadError'));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, t]);
 
   React.useEffect(() => {
     void load();
@@ -147,7 +150,7 @@ export default function TaskDetailPage() {
       const updated = await api.patch<Task>(`/tasks/${id}`, { status: nextStatus });
       setTask(updated);
     } catch (err) {
-      setStatusError(err instanceof Error ? err.message : 'Failed to update status');
+      setStatusError(err instanceof Error ? err.message : t('tasks.detail.statusError'));
     } finally {
       setSavingStatus(false);
     }
@@ -162,7 +165,7 @@ export default function TaskDetailPage() {
       router.push('/tasks');
       router.refresh();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete task');
+      setDeleteError(err instanceof Error ? err.message : t('tasks.detail.deleteError'));
       setDeleting(false);
     }
   }
@@ -182,18 +185,20 @@ export default function TaskDetailPage() {
                   <TriangleAlert className="size-5" />
                 </span>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">Couldn&apos;t load task</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {t('tasks.detail.loadErrorTitle')}
+                  </p>
                   <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-                    {error ?? 'This task could not be found.'}
+                    {error ?? t('tasks.detail.notFound')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="secondary" size="sm" onClick={() => void load()}>
                     <RefreshCw />
-                    Try again
+                    {t('common.tryAgain')}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => router.push('/tasks')}>
-                    Back to tasks
+                    {t('tasks.detail.back')}
                   </Button>
                 </div>
               </div>
@@ -213,10 +218,10 @@ export default function TaskDetailPage() {
                   </h1>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={taskStatusVariant(task.status)} dot>
-                      {taskStatusLabel(task.status)}
+                      {taskStatusLabel(task.status, t)}
                     </Badge>
                     <Badge variant={taskPriorityVariant(task.priority)}>
-                      {taskPriorityLabel(task.priority)}
+                      {taskPriorityLabel(task.priority, t)}
                     </Badge>
                   </div>
                 </div>
@@ -226,17 +231,17 @@ export default function TaskDetailPage() {
             {/* Overview */}
             <Card>
               <CardHeader>
-                <CardTitle>Overview</CardTitle>
-                <CardDescription>Details and status for this task.</CardDescription>
+                <CardTitle>{t('common.overview')}</CardTitle>
+                <CardDescription>{t('tasks.detail.overviewDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="space-y-1.5">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    Description
+                    {t('common.description')}
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-foreground">
                     {task.description?.trim() || (
-                      <span className="text-muted-foreground">No description provided.</span>
+                      <span className="text-muted-foreground">{t('common.noDescription')}</span>
                     )}
                   </p>
                 </div>
@@ -247,7 +252,7 @@ export default function TaskDetailPage() {
                     htmlFor="task-status"
                     className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70"
                   >
-                    Status
+                    {t('common.status')}
                   </label>
                   <div className="flex items-center gap-3">
                     <select
@@ -257,16 +262,16 @@ export default function TaskDetailPage() {
                       onChange={(e) => void handleStatusChange(e.target.value)}
                       disabled={savingStatus}
                     >
-                      {STATUS_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
+                      {TASK_STATUS_ORDER.map((value) => (
+                        <option key={value} value={value}>
+                          {taskStatusLabel(value, t)}
                         </option>
                       ))}
                     </select>
                     {savingStatus && (
                       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Loader2 className="size-3.5 animate-spin" />
-                        Saving…
+                        {t('common.saving')}
                       </span>
                     )}
                   </div>
@@ -279,21 +284,21 @@ export default function TaskDetailPage() {
                 </div>
 
                 <div className="divide-y divide-border border-t border-border">
-                  <MetaRow icon={FolderKanban} label="Project">
+                  <MetaRow icon={FolderKanban} label={t('tasks.form.project')}>
                     {project ? (
                       <Link
                         href={`/projects/${task.projectId}`}
                         className="inline-flex items-center gap-1 text-primary transition-colors hover:underline"
                       >
                         <span className="truncate">{project.name}</span>
-                        <ChevronRight className="size-3.5 shrink-0" />
+                        <ChevronRight className="size-3.5 shrink-0 rtl:-scale-x-100" />
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">Unknown project</span>
+                      <span className="text-muted-foreground">{t('tasks.card.unknownProject')}</span>
                     )}
                   </MetaRow>
 
-                  <MetaRow icon={Bot} label="Assignee">
+                  <MetaRow icon={Bot} label={t('tasks.form.assignee')}>
                     {task.assignedAgentId ? (
                       agent ? (
                         <Link
@@ -301,35 +306,35 @@ export default function TaskDetailPage() {
                           className="inline-flex items-center gap-1 text-primary transition-colors hover:underline"
                         >
                           <span className="truncate">{agent.name}</span>
-                          <ChevronRight className="size-3.5 shrink-0" />
+                          <ChevronRight className="size-3.5 shrink-0 rtl:-scale-x-100" />
                         </Link>
                       ) : (
-                        <span className="text-muted-foreground">Unknown agent</span>
+                        <span className="text-muted-foreground">{t('tasks.detail.unknownAgent')}</span>
                       )
                     ) : (
-                      <span className="text-muted-foreground">Unassigned</span>
+                      <span className="text-muted-foreground">{t('common.unassigned')}</span>
                     )}
                   </MetaRow>
 
-                  <MetaRow icon={Flag} label="Priority">
+                  <MetaRow icon={Flag} label={t('common.priority')}>
                     <Badge variant={taskPriorityVariant(task.priority)}>
-                      {taskPriorityLabel(task.priority)}
+                      {taskPriorityLabel(task.priority, t)}
                     </Badge>
                   </MetaRow>
 
-                  <MetaRow icon={CircleDot} label="Status">
+                  <MetaRow icon={CircleDot} label={t('common.status')}>
                     <Badge variant={taskStatusVariant(task.status)} dot>
-                      {taskStatusLabel(task.status)}
+                      {taskStatusLabel(task.status, t)}
                     </Badge>
                   </MetaRow>
 
-                  <MetaRow icon={CalendarPlus} label="Created">
+                  <MetaRow icon={CalendarPlus} label={t('common.created')}>
                     {formatDateTime(task.createdAt)}
                   </MetaRow>
-                  <MetaRow icon={CalendarClock} label="Last updated">
+                  <MetaRow icon={CalendarClock} label={t('common.lastUpdated')}>
                     {formatDateTime(task.updatedAt)}
                   </MetaRow>
-                  <MetaRow icon={Hash} label="Task ID">
+                  <MetaRow icon={Hash} label={t('tasks.detail.taskId')}>
                     <code className="break-all font-mono text-xs text-muted-foreground">
                       {task.id}
                     </code>
@@ -341,10 +346,8 @@ export default function TaskDetailPage() {
             {/* Danger zone */}
             <Card className="border-danger/30">
               <CardHeader>
-                <CardTitle className="text-danger">Danger zone</CardTitle>
-                <CardDescription>
-                  Deleting a task permanently removes it. This cannot be undone.
-                </CardDescription>
+                <CardTitle className="text-danger">{t('common.dangerZone')}</CardTitle>
+                <CardDescription>{t('tasks.detail.dangerDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {deleteError && (
@@ -356,8 +359,9 @@ export default function TaskDetailPage() {
                 {confirming ? (
                   <div className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-medium text-foreground">
-                      Delete <span className="font-semibold">{task.title}</span>? This can&apos;t be
-                      undone.
+                      {t('tasks.detail.confirmDeleteBefore')}{' '}
+                      <span className="font-semibold">{task.title}</span>
+                      {t('tasks.detail.confirmDeleteAfter')}
                     </p>
                     <div className="flex items-center gap-2">
                       <Button
@@ -366,18 +370,18 @@ export default function TaskDetailPage() {
                         onClick={() => setConfirming(false)}
                         disabled={deleting}
                       >
-                        Cancel
+                        {t('common.cancel')}
                       </Button>
                       <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
                         {deleting ? (
                           <>
                             <Loader2 className="animate-spin" />
-                            Deleting…
+                            {t('common.deleting')}
                           </>
                         ) : (
                           <>
                             <Trash2 />
-                            Delete task
+                            {t('tasks.detail.deleteButton')}
                           </>
                         )}
                       </Button>
@@ -393,7 +397,7 @@ export default function TaskDetailPage() {
                     }}
                   >
                     <Trash2 />
-                    Delete task
+                    {t('tasks.detail.deleteButton')}
                   </Button>
                 )}
               </CardContent>

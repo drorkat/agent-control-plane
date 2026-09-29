@@ -1,3 +1,5 @@
+'use client';
+
 import {
   Activity,
   ArrowUpRight,
@@ -16,18 +18,23 @@ import { AppShell } from '@/components/layout/app-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslationKey } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 
 type Tone = 'success' | 'warning' | 'muted';
 type Trend = 'up' | 'down' | null;
 
 type Stat = {
-  label: string;
+  labelKey: TranslationKey;
   value: string;
   icon: LucideIcon;
   iconTint: string;
-  delta: string;
-  hint: string;
+  /** A literal, non-translated delta (e.g. "+3", "-8%")… */
+  delta?: string;
+  /** …or a dictionary key when the delta contains words (e.g. "2 urgent"). */
+  deltaKey?: TranslationKey;
+  hintKey: TranslationKey;
   tone: Tone;
   trend: Trend;
 };
@@ -40,54 +47,56 @@ const toneText: Record<Tone, string> = {
 
 const STATS: Stat[] = [
   {
-    label: 'Active Agents',
+    labelKey: 'dashboard.stats.activeAgents',
     value: '12',
     icon: Bot,
     iconTint: 'bg-primary/10 text-primary',
     delta: '+3',
-    hint: 'vs last week',
+    hintKey: 'dashboard.stats.vsLastWeek',
     tone: 'success',
     trend: 'up',
   },
   {
-    label: 'Open Tasks',
+    labelKey: 'dashboard.stats.openTasks',
     value: '48',
     icon: ListTodo,
     iconTint: 'bg-muted text-muted-foreground',
     delta: '+12',
-    hint: 'vs last week',
+    hintKey: 'dashboard.stats.vsLastWeek',
     tone: 'muted',
     trend: 'up',
   },
   {
-    label: 'Pending Approvals',
+    labelKey: 'dashboard.stats.pendingApprovals',
     value: '3',
     icon: ShieldCheck,
     iconTint: 'bg-warning/10 text-warning',
-    delta: '2 urgent',
-    hint: 'awaiting review',
+    deltaKey: 'dashboard.stats.urgent2',
+    hintKey: 'dashboard.stats.awaitingReview',
     tone: 'warning',
     trend: null,
   },
   {
-    label: 'Cost this month',
+    labelKey: 'dashboard.stats.cost',
     value: '$1,284',
     icon: DollarSign,
     iconTint: 'bg-success/10 text-success',
     delta: '-8%',
-    hint: 'vs last month',
+    hintKey: 'dashboard.stats.vsLastMonth',
     tone: 'success',
     trend: 'down',
   },
 ];
 
 function StatCard({ stat }: { stat: Stat }) {
+  const { t } = useI18n();
   const TrendIcon = stat.trend === 'up' ? TrendingUp : stat.trend === 'down' ? TrendingDown : null;
+  const delta = stat.deltaKey ? t(stat.deltaKey) : stat.delta;
   return (
     <Card className="transition-shadow duration-200 hover:shadow-md">
       <CardContent className="p-5">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
+          <p className="text-sm font-medium text-muted-foreground">{t(stat.labelKey)}</p>
           <span className={cn('grid size-9 shrink-0 place-items-center rounded-lg', stat.iconTint)}>
             <stat.icon className="size-[18px]" />
           </span>
@@ -97,8 +106,8 @@ function StatCard({ stat }: { stat: Stat }) {
         </p>
         <p className="mt-1.5 flex items-center gap-1 text-xs">
           {TrendIcon && <TrendIcon className={cn('size-3.5', toneText[stat.tone])} />}
-          <span className={cn('font-semibold', toneText[stat.tone])}>{stat.delta}</span>
-          <span className="text-muted-foreground">{stat.hint}</span>
+          <span className={cn('font-semibold', toneText[stat.tone])}>{delta}</span>
+          <span className="text-muted-foreground">{t(stat.hintKey)}</span>
         </p>
       </CardContent>
     </Card>
@@ -134,14 +143,15 @@ function EmptyState({
 
 function PanelHeaderAction({ label }: { label: string }) {
   return (
-    <Button variant="ghost" size="sm" className="-mr-2 text-muted-foreground">
+    <Button variant="ghost" size="sm" className="-me-2 text-muted-foreground">
       {label}
-      <ArrowUpRight />
+      <ArrowUpRight className="rtl:-scale-x-100" />
     </Button>
   );
 }
 
 export default function DashboardPage() {
+  const { t } = useI18n();
   return (
     <AppShell>
       <div className="space-y-6">
@@ -149,21 +159,21 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dashboard</h1>
-              <Badge variant="primary">Pre-alpha</Badge>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                {t('dashboard.title')}
+              </h1>
+              <Badge variant="primary">{t('dashboard.badge')}</Badge>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Monitor your agents, tasks, and approvals — all under human control.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('dashboard.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="md">
               <CalendarDays />
-              Last 7 days
+              {t('dashboard.last7days')}
             </Button>
             <Button size="md">
               <Plus />
-              New task
+              {t('dashboard.newTask')}
             </Button>
           </div>
         </div>
@@ -171,7 +181,7 @@ export default function DashboardPage() {
         {/* Stat cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {STATS.map((stat) => (
-            <StatCard key={stat.label} stat={stat} />
+            <StatCard key={stat.labelKey} stat={stat} />
           ))}
         </div>
 
@@ -180,17 +190,17 @@ export default function DashboardPage() {
           <Card className="lg:col-span-3">
             <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
               <div className="space-y-1">
-                <CardTitle>Recent Runs</CardTitle>
-                <CardDescription>Latest agent executions across your projects</CardDescription>
+                <CardTitle>{t('dashboard.recentRuns.title')}</CardTitle>
+                <CardDescription>{t('dashboard.recentRuns.desc')}</CardDescription>
               </div>
-              <PanelHeaderAction label="View all" />
+              <PanelHeaderAction label={t('dashboard.recentRuns.viewAll')} />
             </CardHeader>
             <CardContent>
               <EmptyState
                 icon={Activity}
-                title="No runs yet"
-                description="Once your agents start executing tasks, their runs and live logs will appear here."
-                actionLabel="Start a run"
+                title={t('dashboard.recentRuns.emptyTitle')}
+                description={t('dashboard.recentRuns.emptyDesc')}
+                actionLabel={t('dashboard.recentRuns.action')}
               />
             </CardContent>
           </Card>
@@ -198,17 +208,17 @@ export default function DashboardPage() {
           <Card className="lg:col-span-2">
             <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
               <div className="space-y-1">
-                <CardTitle>Pending Approvals</CardTitle>
-                <CardDescription>Risky actions waiting on a human</CardDescription>
+                <CardTitle>{t('dashboard.approvals.title')}</CardTitle>
+                <CardDescription>{t('dashboard.approvals.desc')}</CardDescription>
               </div>
-              <PanelHeaderAction label="Review" />
+              <PanelHeaderAction label={t('dashboard.approvals.review')} />
             </CardHeader>
             <CardContent>
               <EmptyState
                 icon={Inbox}
-                title="You're all caught up"
-                description="Approvals routed to you for merges, deploys, and other risky steps show up here."
-                actionLabel="Configure policies"
+                title={t('dashboard.approvals.emptyTitle')}
+                description={t('dashboard.approvals.emptyDesc')}
+                actionLabel={t('dashboard.approvals.action')}
               />
             </CardContent>
           </Card>

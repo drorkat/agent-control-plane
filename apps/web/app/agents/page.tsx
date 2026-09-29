@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 import {
   Agent,
@@ -53,6 +55,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function AgentsPage() {
+  const { t } = useI18n();
   const [agents, setAgents] = React.useState<Agent[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -69,11 +72,11 @@ export default function AgentsPage() {
       const data = await api.get<Agent[]>('/agents');
       setAgents(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load agents');
+      setError(err instanceof Error ? err.message : t('agents.loadError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     void load();
@@ -110,7 +113,7 @@ export default function AgentsPage() {
       setShowForm(false);
       await load();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to create agent');
+      setFormError(err instanceof Error ? err.message : t('agents.createError'));
     } finally {
       setSubmitting(false);
     }
@@ -123,24 +126,24 @@ export default function AgentsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Agents</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                {t('agents.title')}
+              </h1>
               {!loading && !error && (
                 <Badge variant="neutral">{agents.length}</Badge>
               )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Configure the AI agents that run your tasks — always under human control.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('agents.subtitle')}</p>
           </div>
           {showForm ? (
             <Button variant="secondary" size="md" onClick={closeForm}>
               <X />
-              Cancel
+              {t('common.cancel')}
             </Button>
           ) : (
             <Button size="md" onClick={openForm}>
               <Plus />
-              New agent
+              {t('agents.new')}
             </Button>
           )}
         </div>
@@ -153,13 +156,13 @@ export default function AgentsPage() {
                 <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <label htmlFor="agent-name" className={labelClass}>
-                      Name <span className="text-danger">*</span>
+                      {t('common.name')} <span className="text-danger">*</span>
                     </label>
                     <Input
                       id="agent-name"
                       required
                       autoFocus
-                      placeholder="e.g. Release Manager"
+                      placeholder={t('agents.form.namePlaceholder')}
                       value={form.name}
                       onChange={(e) => updateField('name', e.target.value)}
                     />
@@ -167,11 +170,11 @@ export default function AgentsPage() {
 
                   <div className="space-y-1.5">
                     <label htmlFor="agent-role" className={labelClass}>
-                      Role
+                      {t('agents.form.role')}
                     </label>
                     <Input
                       id="agent-role"
-                      placeholder="e.g. Reviews and merges PRs"
+                      placeholder={t('agents.form.rolePlaceholder')}
                       value={form.role}
                       onChange={(e) => updateField('role', e.target.value)}
                     />
@@ -179,7 +182,7 @@ export default function AgentsPage() {
 
                   <div className="space-y-1.5">
                     <label htmlFor="agent-provider" className={labelClass}>
-                      Provider <span className="text-danger">*</span>
+                      {t('common.provider')} <span className="text-danger">*</span>
                     </label>
                     <select
                       id="agent-provider"
@@ -198,12 +201,12 @@ export default function AgentsPage() {
 
                   <div className="space-y-1.5">
                     <label htmlFor="agent-model" className={labelClass}>
-                      Model <span className="text-danger">*</span>
+                      {t('agents.form.model')} <span className="text-danger">*</span>
                     </label>
                     <Input
                       id="agent-model"
                       required
-                      placeholder="e.g. claude-sonnet-4-5"
+                      placeholder={t('agents.form.modelPlaceholder')}
                       value={form.model}
                       onChange={(e) => updateField('model', e.target.value)}
                     />
@@ -212,12 +215,12 @@ export default function AgentsPage() {
 
                 <div className="space-y-1.5">
                   <label htmlFor="agent-instructions" className={labelClass}>
-                    Instructions
+                    {t('agents.form.instructions')}
                   </label>
                   <textarea
                     id="agent-instructions"
                     rows={4}
-                    placeholder="System prompt / operating guidelines for this agent…"
+                    placeholder={t('agents.form.instructionsPlaceholder')}
                     className={cn(fieldControl, 'min-h-[96px] resize-y py-2 leading-relaxed')}
                     value={form.instructions}
                     onChange={(e) => updateField('instructions', e.target.value)}
@@ -233,10 +236,10 @@ export default function AgentsPage() {
 
                 <div className="flex items-center justify-end gap-2">
                   <Button type="button" variant="ghost" size="md" onClick={closeForm} disabled={submitting}>
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                   <Button type="submit" size="md" disabled={submitting}>
-                    {submitting ? 'Creating…' : 'Create agent'}
+                    {submitting ? t('common.creating') : t('agents.create')}
                   </Button>
                 </div>
               </form>
@@ -248,13 +251,13 @@ export default function AgentsPage() {
         {loading ? (
           <AgentGridSkeleton />
         ) : error ? (
-          <ErrorState message={error} onRetry={load} />
+          <ErrorState message={error} onRetry={load} t={t} />
         ) : agents.length === 0 ? (
-          <EmptyState onCreate={openForm} />
+          <EmptyState onCreate={openForm} t={t} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {agents.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
+              <AgentCard key={agent.id} agent={agent} t={t} />
             ))}
           </div>
         )}
@@ -263,7 +266,7 @@ export default function AgentsPage() {
   );
 }
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent, t }: { agent: Agent; t: TranslateFn }) {
   return (
     <Link
       href={`/agents/${agent.id}`}
@@ -279,19 +282,19 @@ function AgentCard({ agent }: { agent: Agent }) {
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{agent.name}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {agent.role || 'No role set'}
+                  {agent.role || t('agents.noRole')}
                 </p>
               </div>
             </div>
-            <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
+            <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground rtl:-scale-x-100" />
           </div>
 
           <div className="mt-auto flex flex-wrap items-center gap-2">
             <Badge variant="primary">{providerLabel(agent.provider)}</Badge>
             <Badge variant={statusVariant(agent.status)} dot>
-              {statusLabel(agent.status)}
+              {statusLabel(agent.status, t)}
             </Badge>
-            <span className="ml-auto inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+            <span className="ms-auto inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
               <Cpu className="size-3" />
               {agent.model}
             </span>
@@ -326,40 +329,45 @@ function AgentGridSkeleton() {
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ onCreate, t }: { onCreate: () => void; t: TranslateFn }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-card text-muted-foreground shadow-xs ring-1 ring-border">
         <Bot className="size-5" />
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">No agents yet</p>
-        <p className="mx-auto max-w-xs text-sm text-muted-foreground">
-          Create your first agent to start delegating tasks to AI — with the autonomy and guardrails
-          you choose.
-        </p>
+        <p className="text-sm font-semibold text-foreground">{t('agents.emptyTitle')}</p>
+        <p className="mx-auto max-w-xs text-sm text-muted-foreground">{t('agents.emptyDesc')}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onCreate}>
         <Plus />
-        New agent
+        {t('agents.new')}
       </Button>
     </div>
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+  t,
+}: {
+  message: string;
+  onRetry: () => void;
+  t: TranslateFn;
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-danger/30 bg-danger/5 px-6 py-16 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-card text-danger shadow-xs ring-1 ring-danger/25">
         <AlertCircle className="size-5" />
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">Couldn&apos;t load agents</p>
+        <p className="text-sm font-semibold text-foreground">{t('agents.loadErrorTitle')}</p>
         <p className="mx-auto max-w-xs text-sm text-muted-foreground">{message}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onRetry}>
         <RotateCcw />
-        Try again
+        {t('common.tryAgain')}
       </Button>
     </div>
   );

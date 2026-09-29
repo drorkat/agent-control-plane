@@ -1,6 +1,7 @@
 'use client';
 
 import { Moon, Sun } from 'lucide-react';
+import { useI18n } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 
 /**
@@ -9,6 +10,8 @@ import { cn } from '@/lib/utils';
  * icon shown here is driven purely by the class (no hydration mismatch).
  */
 export function ThemeToggle({ className }: { className?: string }) {
+  const { t } = useI18n();
+
   function toggle() {
     const root = document.documentElement;
     const next = !root.classList.contains('dark');
@@ -24,8 +27,8 @@ export function ThemeToggle({ className }: { className?: string }) {
     <button
       type="button"
       onClick={toggle}
-      aria-label="Toggle color theme"
-      title="Toggle theme"
+      aria-label={t('topbar.toggleTheme')}
+      title={t('topbar.toggleTheme')}
       className={cn(
         'inline-flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground',
         'transition-colors hover:bg-accent hover:text-foreground',

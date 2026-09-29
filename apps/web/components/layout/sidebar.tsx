@@ -12,24 +12,26 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslationKey } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 import { Logo } from './logo';
 
 type NavItem = {
-  label: string;
+  labelKey: TranslationKey;
   href: string;
   icon: LucideIcon;
   badge?: string;
 };
 
 const NAV: NavItem[] = [
-  { label: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { label: 'Projects', href: '/projects', icon: FolderKanban },
-  { label: 'Agents', href: '/agents', icon: Bot },
-  { label: 'Tasks', href: '/tasks', icon: ListTodo },
-  { label: 'Runs', href: '/runs', icon: Activity },
-  { label: 'Approvals', href: '/approvals', icon: ShieldCheck, badge: '3' },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { labelKey: 'nav.dashboard', href: '/', icon: LayoutDashboard },
+  { labelKey: 'nav.projects', href: '/projects', icon: FolderKanban },
+  { labelKey: 'nav.agents', href: '/agents', icon: Bot },
+  { labelKey: 'nav.tasks', href: '/tasks', icon: ListTodo },
+  { labelKey: 'nav.runs', href: '/runs', icon: Activity },
+  { labelKey: 'nav.approvals', href: '/approvals', icon: ShieldCheck, badge: '3' },
+  { labelKey: 'nav.settings', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar({
@@ -40,9 +42,10 @@ export function Sidebar({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
-    <aside className={cn('flex h-full w-64 flex-col border-r border-border bg-card', className)}>
+    <aside className={cn('flex h-full w-64 flex-col border-e border-border bg-card', className)}>
       {/* Brand */}
       <div className="flex h-16 items-center gap-2.5 border-b border-border px-5">
         <Logo className="size-9" />
@@ -59,7 +62,7 @@ export function Sidebar({
       {/* Navigation */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
         <p className="px-3 pb-1.5 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          Workspace
+          {t('nav.workspace')}
         </p>
         {NAV.map((item) => {
           const active =
@@ -81,7 +84,7 @@ export function Sidebar({
             >
               {active && (
                 <span
-                  className="absolute inset-y-1.5 left-0 w-0.5 rounded-r-full bg-primary"
+                  className="absolute inset-y-1.5 start-0 w-0.5 rounded-e-full bg-primary"
                   aria-hidden
                 />
               )}
@@ -91,7 +94,7 @@ export function Sidebar({
                   active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
                 )}
               />
-              <span className="flex-1 truncate">{item.label}</span>
+              <span className="flex-1 truncate">{t(item.labelKey)}</span>
               {item.badge && (
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[11px] font-semibold text-primary ring-1 ring-inset ring-primary/20">
                   {item.badge}
@@ -109,7 +112,7 @@ export function Sidebar({
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-success/60" />
             <span className="relative inline-flex size-2 rounded-full bg-success" />
           </span>
-          All systems operational
+          {t('nav.operational')}
         </div>
       </div>
     </aside>

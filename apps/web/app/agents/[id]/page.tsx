@@ -19,10 +19,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 import { Agent, providerLabel, statusLabel, statusVariant } from '../types';
 
 export default function AgentDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
@@ -43,11 +46,11 @@ export default function AgentDetailPage() {
       const data = await api.get<Agent>(`/agents/${id}`);
       setAgent(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load agent');
+      setError(err instanceof Error ? err.message : t('agents.loadError'));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, t]);
 
   React.useEffect(() => {
     void load();
@@ -61,7 +64,7 @@ export default function AgentDetailPage() {
       await api.delete(`/agents/${id}`);
       router.push('/agents');
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete agent');
+      setDeleteError(err instanceof Error ? err.message : t('agents.detail.deleteError'));
       setDeleting(false);
     }
   }
@@ -73,14 +76,14 @@ export default function AgentDetailPage() {
           href="/agents"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md"
         >
-          <ArrowLeft className="size-4" />
-          Back to agents
+          <ArrowLeft className="size-4 rtl:-scale-x-100" />
+          {t('agents.detail.back')}
         </Link>
 
         {loading ? (
           <DetailSkeleton />
         ) : error || !agent ? (
-          <ErrorState message={error ?? 'Agent not found'} onRetry={load} />
+          <ErrorState message={error ?? t('agents.detail.notFound')} onRetry={load} t={t} />
         ) : (
           <>
             {/* Header */}
@@ -95,7 +98,7 @@ export default function AgentDetailPage() {
                   </h1>
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={statusVariant(agent.status)} dot>
-                      {statusLabel(agent.status)}
+                      {statusLabel(agent.status, t)}
                     </Badge>
                     <Badge variant="primary">{providerLabel(agent.provider)}</Badge>
                     {agent.role && (
@@ -114,17 +117,17 @@ export default function AgentDetailPage() {
                       onClick={() => setConfirmingDelete(false)}
                       disabled={deleting}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </Button>
                     <Button variant="danger" size="md" onClick={handleDelete} disabled={deleting}>
                       <Trash2 />
-                      {deleting ? 'Deleting…' : 'Confirm delete'}
+                      {deleting ? t('common.deleting') : t('common.confirmDelete')}
                     </Button>
                   </>
                 ) : (
                   <Button variant="danger" size="md" onClick={() => setConfirmingDelete(true)}>
                     <Trash2 />
-                    Delete
+                    {t('common.delete')}
                   </Button>
                 )}
               </div>
@@ -141,17 +144,21 @@ export default function AgentDetailPage() {
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
               <Card className="lg:col-span-1">
                 <CardHeader>
-                  <CardTitle>Configuration</CardTitle>
+                  <CardTitle>{t('agents.detail.configuration')}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <DetailRow icon={Sparkles} label="Provider" value={providerLabel(agent.provider)} />
-                  <DetailRow icon={Cpu} label="Model" value={agent.model} mono />
+                  <DetailRow
+                    icon={Sparkles}
+                    label={t('common.provider')}
+                    value={providerLabel(agent.provider)}
+                  />
+                  <DetailRow icon={Cpu} label={t('agents.form.model')} value={agent.model} mono />
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Gauge className="size-4 shrink-0" />
-                      <span>Autonomy</span>
-                      <span className="ml-auto font-medium text-foreground">
-                        Level {agent.autonomyLevel}
+                      <span>{t('agents.detail.autonomy')}</span>
+                      <span className="ms-auto font-medium text-foreground">
+                        {t('agents.detail.autonomyLevel', { level: agent.autonomyLevel })}
                       </span>
                     </div>
                     <AutonomyMeter level={agent.autonomyLevel} />
@@ -161,7 +168,7 @@ export default function AgentDetailPage() {
 
               <Card className="lg:col-span-2">
                 <CardHeader>
-                  <CardTitle>Instructions</CardTitle>
+                  <CardTitle>{t('agents.form.instructions')}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {agent.instructions ? (
@@ -170,7 +177,7 @@ export default function AgentDetailPage() {
                     </p>
                   ) : (
                     <p className="text-sm italic text-muted-foreground">
-                      No instructions set for this agent.
+                      {t('agents.detail.noInstructions')}
                     </p>
                   )}
                 </CardContent>
@@ -198,7 +205,7 @@ function DetailRow({
     <div className="flex items-center gap-2 text-sm">
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="text-muted-foreground">{label}</span>
-      <span className={cn('ml-auto font-medium text-foreground', mono && 'font-mono text-[13px]')}>
+      <span className={cn('ms-auto font-medium text-foreground', mono && 'font-mono text-[13px]')}>
         {value}
       </span>
     </div>
@@ -253,19 +260,27 @@ function DetailSkeleton() {
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  message,
+  onRetry,
+  t,
+}: {
+  message: string;
+  onRetry: () => void;
+  t: TranslateFn;
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-danger/30 bg-danger/5 px-6 py-16 text-center">
       <span className="grid size-11 place-items-center rounded-full bg-card text-danger shadow-xs ring-1 ring-danger/25">
         <AlertCircle className="size-5" />
       </span>
       <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">Couldn&apos;t load this agent</p>
+        <p className="text-sm font-semibold text-foreground">{t('agents.detail.loadErrorTitle')}</p>
         <p className="mx-auto max-w-xs text-sm text-muted-foreground">{message}</p>
       </div>
       <Button variant="secondary" size="sm" onClick={onRetry}>
         <RotateCcw />
-        Try again
+        {t('common.tryAgain')}
       </Button>
     </div>
   );

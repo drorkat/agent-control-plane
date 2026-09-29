@@ -27,6 +27,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
 
 type Project = {
   id: string;
@@ -54,13 +55,14 @@ function isHttpUrl(value: string): boolean {
 }
 
 function BackLink() {
+  const { t } = useI18n();
   return (
     <Link
       href="/projects"
       className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      <ArrowLeft className="size-4" />
-      Back to projects
+      <ArrowLeft className="size-4 rtl:-scale-x-100" />
+      {t('projects.detail.back')}
     </Link>
   );
 }
@@ -80,12 +82,13 @@ function MetaRow({
         <Icon className="size-4 shrink-0" />
         {label}
       </span>
-      <span className="min-w-0 text-right text-sm font-medium text-foreground">{children}</span>
+      <span className="min-w-0 text-end text-sm font-medium text-foreground">{children}</span>
     </div>
   );
 }
 
 export default function ProjectDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ id: string | string[] }>();
   const rawId = params?.id;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
@@ -107,11 +110,11 @@ export default function ProjectDetailPage() {
       const data = await api.get<Project>(`/projects/${id}`);
       setProject(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load project');
+      setError(err instanceof Error ? err.message : t('projects.loadError'));
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, t]);
 
   React.useEffect(() => {
     void load();
@@ -126,7 +129,7 @@ export default function ProjectDetailPage() {
       router.push('/projects');
       router.refresh();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete project');
+      setDeleteError(err instanceof Error ? err.message : t('projects.detail.deleteError'));
       setDeleting(false);
     }
   }
@@ -161,18 +164,20 @@ export default function ProjectDetailPage() {
                   <TriangleAlert className="size-5" />
                 </span>
                 <div className="space-y-1">
-                  <p className="text-sm font-semibold text-foreground">Couldn&apos;t load project</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {t('projects.detail.loadErrorTitle')}
+                  </p>
                   <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-                    {error ?? 'This project could not be found.'}
+                    {error ?? t('projects.detail.notFound')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="secondary" size="sm" onClick={() => void load()}>
                     <RefreshCw />
-                    Try again
+                    {t('common.tryAgain')}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => router.push('/projects')}>
-                    Back to projects
+                    {t('projects.detail.back')}
                   </Button>
                 </div>
               </div>
@@ -193,11 +198,11 @@ export default function ProjectDetailPage() {
                   {project.repoUrl ? (
                     <Badge variant="success">
                       <GitBranch className="size-3" />
-                      Repo connected
+                      {t('common.repoConnected')}
                     </Badge>
                   ) : (
                     <Badge variant="neutral" dot>
-                      No repo
+                      {t('common.noRepo')}
                     </Badge>
                   )}
                 </div>
@@ -207,24 +212,24 @@ export default function ProjectDetailPage() {
             {/* Details */}
             <Card>
               <CardHeader>
-                <CardTitle>Overview</CardTitle>
-                <CardDescription>Details for this project.</CardDescription>
+                <CardTitle>{t('common.overview')}</CardTitle>
+                <CardDescription>{t('projects.detail.overviewDesc')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
                 <div className="space-y-1.5">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    Description
+                    {t('common.description')}
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-foreground">
                     {project.description?.trim() || (
-                      <span className="text-muted-foreground">No description provided.</span>
+                      <span className="text-muted-foreground">{t('common.noDescription')}</span>
                     )}
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    Repository
+                    {t('projects.detail.repository')}
                   </p>
                   {project.repoUrl ? (
                     isHttpUrl(project.repoUrl) ? (
@@ -244,18 +249,20 @@ export default function ProjectDetailPage() {
                       </code>
                     )
                   ) : (
-                    <p className="text-sm text-muted-foreground">No repository linked.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('projects.detail.noRepoLinked')}
+                    </p>
                   )}
                 </div>
 
                 <div className="divide-y divide-border border-t border-border">
-                  <MetaRow icon={CalendarPlus} label="Created">
+                  <MetaRow icon={CalendarPlus} label={t('common.created')}>
                     {formatDateTime(project.createdAt)}
                   </MetaRow>
-                  <MetaRow icon={CalendarClock} label="Last updated">
+                  <MetaRow icon={CalendarClock} label={t('common.lastUpdated')}>
                     {formatDateTime(project.updatedAt)}
                   </MetaRow>
-                  <MetaRow icon={Hash} label="Project ID">
+                  <MetaRow icon={Hash} label={t('projects.detail.projectId')}>
                     <code className="break-all font-mono text-xs text-muted-foreground">
                       {project.id}
                     </code>
@@ -267,10 +274,8 @@ export default function ProjectDetailPage() {
             {/* Danger zone */}
             <Card className="border-danger/30">
               <CardHeader>
-                <CardTitle className="text-danger">Danger zone</CardTitle>
-                <CardDescription>
-                  Deleting a project permanently removes it. This cannot be undone.
-                </CardDescription>
+                <CardTitle className="text-danger">{t('common.dangerZone')}</CardTitle>
+                <CardDescription>{t('projects.detail.dangerDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 {deleteError && (
@@ -282,8 +287,9 @@ export default function ProjectDetailPage() {
                 {confirming ? (
                   <div className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-medium text-foreground">
-                      Delete <span className="font-semibold">{project.name}</span>? This can&apos;t be
-                      undone.
+                      {t('projects.detail.confirmDeleteBefore')}{' '}
+                      <span className="font-semibold">{project.name}</span>
+                      {t('projects.detail.confirmDeleteAfter')}
                     </p>
                     <div className="flex items-center gap-2">
                       <Button
@@ -292,18 +298,18 @@ export default function ProjectDetailPage() {
                         onClick={() => setConfirming(false)}
                         disabled={deleting}
                       >
-                        Cancel
+                        {t('common.cancel')}
                       </Button>
                       <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
                         {deleting ? (
                           <>
                             <Loader2 className="animate-spin" />
-                            Deleting…
+                            {t('common.deleting')}
                           </>
                         ) : (
                           <>
                             <Trash2 />
-                            Delete project
+                            {t('projects.detail.deleteButton')}
                           </>
                         )}
                       </Button>
@@ -319,7 +325,7 @@ export default function ProjectDetailPage() {
                     }}
                   >
                     <Trash2 />
-                    Delete project
+                    {t('projects.detail.deleteButton')}
                   </Button>
                 )}
               </CardContent>

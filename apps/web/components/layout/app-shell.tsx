@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useI18n } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
@@ -10,6 +11,7 @@ import { Topbar } from './topbar';
  * mobile, a sticky topbar, and a scrolling content area.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   const closeDrawer = React.useCallback(() => setDrawerOpen(false), []);
@@ -52,10 +54,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Navigation"
+          aria-label={t('nav.navigation')}
           className={cn(
-            'absolute inset-y-0 left-0 shadow-lg transition-transform duration-300 ease-out',
-            drawerOpen ? 'translate-x-0' : '-translate-x-full',
+            'absolute inset-y-0 start-0 shadow-lg transition-transform duration-300 ease-out',
+            // Anchored to the inline-start edge; when closed it slides off that
+            // edge — to the left in LTR, to the right in RTL.
+            drawerOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
           )}
         >
           <Sidebar className="h-full" onNavigate={closeDrawer} />

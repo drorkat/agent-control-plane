@@ -1,4 +1,5 @@
 import type { BadgeVariant } from '@/components/ui/badge';
+import type { TranslateFn, TranslationKey } from '@/lib/i18n/dictionary';
 
 export type TaskStatus =
   | 'backlog'
@@ -46,18 +47,19 @@ export const TASK_STATUS_ORDER: TaskStatus[] = [
   'failed',
 ];
 
-const STATUS_LABELS: Record<string, string> = {
-  backlog: 'Backlog',
-  ready: 'Ready',
-  in_progress: 'In Progress',
-  waiting_approval: 'Waiting Approval',
-  completed: 'Completed',
-  failed: 'Failed',
+const STATUS_LABEL_KEYS: Record<TaskStatus, TranslationKey> = {
+  backlog: 'tasks.status.backlog',
+  ready: 'tasks.status.ready',
+  in_progress: 'tasks.status.in_progress',
+  waiting_approval: 'tasks.status.waiting_approval',
+  completed: 'tasks.status.completed',
+  failed: 'tasks.status.failed',
 };
 
-/** Human-friendly status name, falling back to the raw value. */
-export function taskStatusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status;
+/** Translated status name, falling back to the raw value for unknown statuses. */
+export function taskStatusLabel(status: string, t: TranslateFn): string {
+  const key = STATUS_LABEL_KEYS[status as TaskStatus];
+  return key ? t(key) : status;
 }
 
 /** Map a task status to a design-system Badge variant. */
@@ -80,15 +82,16 @@ export function taskStatusVariant(status: string): BadgeVariant {
 
 export const TASK_PRIORITY_ORDER: TaskPriority[] = ['low', 'medium', 'high'];
 
-const PRIORITY_LABELS: Record<string, string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
+const PRIORITY_LABEL_KEYS: Record<TaskPriority, TranslationKey> = {
+  low: 'tasks.priority.low',
+  medium: 'tasks.priority.medium',
+  high: 'tasks.priority.high',
 };
 
-/** Human-friendly priority name, falling back to the raw value. */
-export function taskPriorityLabel(priority: string): string {
-  return PRIORITY_LABELS[priority] ?? priority;
+/** Translated priority name, falling back to the raw value for unknown priorities. */
+export function taskPriorityLabel(priority: string, t: TranslateFn): string {
+  const key = PRIORITY_LABEL_KEYS[priority as TaskPriority];
+  return key ? t(key) : priority;
 }
 
 /** Map a task priority to a design-system Badge variant. */
@@ -103,9 +106,3 @@ export function taskPriorityVariant(priority: string): BadgeVariant {
       return 'neutral';
   }
 }
-
-export const STATUS_OPTIONS: { value: TaskStatus; label: string }[] =
-  TASK_STATUS_ORDER.map((value) => ({ value, label: taskStatusLabel(value) }));
-
-export const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] =
-  TASK_PRIORITY_ORDER.map((value) => ({ value, label: taskPriorityLabel(value) }));

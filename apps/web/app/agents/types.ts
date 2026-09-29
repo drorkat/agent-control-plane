@@ -1,4 +1,5 @@
 import type { BadgeVariant } from '@/components/ui/badge';
+import type { TranslateFn, TranslationKey } from '@/lib/i18n/dictionary';
 
 export type AgentStatus = 'idle' | 'working' | 'paused';
 
@@ -42,9 +43,20 @@ export function statusVariant(status: string): BadgeVariant {
   }
 }
 
-/** Title-case an arbitrary status string for display (e.g. "idle" -> "Idle"). */
-export function statusLabel(status: string): string {
-  if (!status) return 'Unknown';
+const STATUS_LABEL_KEYS: Record<AgentStatus, TranslationKey> = {
+  idle: 'agents.status.idle',
+  working: 'agents.status.working',
+  paused: 'agents.status.paused',
+};
+
+/**
+ * Translated status name. Falls back to the "unknown" label for an empty
+ * status, or to a title-cased raw value for an unexpected one.
+ */
+export function statusLabel(status: string, t: TranslateFn): string {
+  if (!status) return t('agents.status.unknown');
+  const key = STATUS_LABEL_KEYS[status as AgentStatus];
+  if (key) return t(key);
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 

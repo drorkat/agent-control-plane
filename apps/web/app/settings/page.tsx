@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { useI18n } from '@/lib/i18n/context';
+import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
 
 // Safe, client-facing shape of a stored provider credential. The API never
@@ -74,6 +76,7 @@ function maskedKey(last4: string | null): string {
 }
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const [credentials, setCredentials] = React.useState<ProviderCredential[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -92,11 +95,11 @@ export default function SettingsPage() {
       const data = await api.get<ProviderCredential[]>('/providers');
       setCredentials(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load provider keys');
+      setError(err instanceof Error ? err.message : t('settings.loadError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     void load();
@@ -123,7 +126,7 @@ export default function SettingsPage() {
     event.preventDefault();
     const trimmedKey = apiKey.trim();
     if (trimmedKey.length < 8) {
-      setFormError('Enter a valid API key (at least 8 characters).');
+      setFormError(t('settings.form.keyValidation'));
       return;
     }
     setSubmitting(true);
@@ -139,7 +142,7 @@ export default function SettingsPage() {
       resetForm();
       setShowForm(false);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Failed to save provider key');
+      setFormError(err instanceof Error ? err.message : t('settings.saveError'));
     } finally {
       setSubmitting(false);
     }
@@ -152,10 +155,10 @@ export default function SettingsPage() {
       <div className="space-y-8">
         {/* Page header */}
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage workspace configuration and integrations.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            {t('settings.title')}
+          </h1>
+          <p className="text-sm text-muted-foreground">{t('settings.subtitle')}</p>
         </div>
 
         {/* AI Providers section */}
@@ -164,15 +167,14 @@ export default function SettingsPage() {
             <div className="space-y-1">
               <div className="flex items-center gap-2.5">
                 <h2 className="text-lg font-semibold tracking-tight text-foreground">
-                  AI Providers
+                  {t('settings.providers.title')}
                 </h2>
                 {!loading && !error && hasCredentials && (
                   <Badge variant="neutral">{credentials.length}</Badge>
                 )}
               </div>
               <p className="max-w-prose text-sm text-muted-foreground">
-                Bring your own API keys so your agents can call the models. Keys are encrypted at
-                rest and never shown again after saving.
+                {t('settings.providers.subtitle')}
               </p>
             </div>
             <Button
@@ -183,12 +185,12 @@ export default function SettingsPage() {
               {showForm ? (
                 <>
                   <X />
-                  Cancel
+                  {t('common.cancel')}
                 </>
               ) : (
                 <>
                   <Plus />
-                  Add provider key
+                  {t('settings.providers.add')}
                 </>
               )}
             </Button>
@@ -202,7 +204,7 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <label htmlFor="provider-select" className={labelClass}>
-                        Provider <span className="text-danger">*</span>
+                        {t('common.provider')} <span className="text-danger">*</span>
                       </label>
                       <select
                         id="provider-select"
@@ -221,13 +223,13 @@ export default function SettingsPage() {
 
                     <div className="space-y-1.5">
                       <label htmlFor="provider-label" className={labelClass}>
-                        Label
+                        {t('settings.form.label')}
                       </label>
                       <Input
                         id="provider-label"
                         value={label}
                         onChange={(event) => setLabel(event.target.value)}
-                        placeholder="e.g. Production key"
+                        placeholder={t('settings.form.labelPlaceholder')}
                         maxLength={200}
                         disabled={submitting}
                       />
@@ -236,7 +238,7 @@ export default function SettingsPage() {
 
                   <div className="space-y-1.5">
                     <label htmlFor="provider-api-key" className={labelClass}>
-                      API key <span className="text-danger">*</span>
+                      {t('settings.form.apiKey')} <span className="text-danger">*</span>
                     </label>
                     <Input
                       id="provider-api-key"
@@ -250,13 +252,13 @@ export default function SettingsPage() {
                     />
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <ShieldCheck className="size-3.5 shrink-0" />
-                      Stored encrypted. You won&apos;t be able to view the key again after saving.
+                      {t('settings.form.encryptedNote')}
                     </p>
                   </div>
 
                   <div className="flex flex-col-reverse items-stretch gap-2 pt-1 sm:flex-row sm:items-center sm:justify-end">
                     {formError && (
-                      <p className="flex items-center gap-1.5 text-sm text-danger sm:mr-auto">
+                      <p className="flex items-center gap-1.5 text-sm text-danger sm:me-auto">
                         <TriangleAlert className="size-4 shrink-0" />
                         {formError}
                       </p>
@@ -268,7 +270,7 @@ export default function SettingsPage() {
                       onClick={closeForm}
                       disabled={submitting}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </Button>
                     <Button
                       type="submit"
@@ -278,12 +280,12 @@ export default function SettingsPage() {
                       {submitting ? (
                         <>
                           <Loader2 className="animate-spin" />
-                          Saving…
+                          {t('common.saving')}
                         </>
                       ) : (
                         <>
                           <Plus />
-                          Save key
+                          {t('settings.form.save')}
                         </>
                       )}
                     </Button>
@@ -305,13 +307,13 @@ export default function SettingsPage() {
                   </span>
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-foreground">
-                      Couldn&apos;t load provider keys
+                      {t('settings.loadErrorTitle')}
                     </p>
                     <p className="mx-auto max-w-sm text-sm text-muted-foreground">{error}</p>
                   </div>
                   <Button variant="secondary" size="sm" onClick={() => void load()}>
                     <RotateCcw />
-                    Try again
+                    {t('common.tryAgain')}
                   </Button>
                 </div>
               </CardContent>
@@ -326,6 +328,7 @@ export default function SettingsPage() {
                     onDeleted={(id) =>
                       setCredentials((prev) => prev.filter((c) => c.id !== id))
                     }
+                    t={t}
                   />
                 ))}
               </CardContent>
@@ -336,16 +339,15 @@ export default function SettingsPage() {
                 <KeyRound className="size-5" />
               </span>
               <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">No provider keys yet</p>
+                <p className="text-sm font-semibold text-foreground">{t('settings.emptyTitle')}</p>
                 <p className="mx-auto max-w-xs text-sm text-muted-foreground">
-                  Add an Anthropic or OpenAI API key so your agents can call the models. Keys are
-                  encrypted at rest.
+                  {t('settings.emptyDesc')}
                 </p>
               </div>
               {!showForm && (
                 <Button variant="secondary" size="sm" onClick={openForm}>
                   <Plus />
-                  Add provider key
+                  {t('settings.providers.add')}
                 </Button>
               )}
             </div>
@@ -359,9 +361,11 @@ export default function SettingsPage() {
 function CredentialRow({
   credential,
   onDeleted,
+  t,
 }: {
   credential: ProviderCredential;
   onDeleted: (id: string) => void;
+  t: TranslateFn;
 }) {
   const [confirming, setConfirming] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
@@ -374,7 +378,7 @@ function CredentialRow({
       await api.delete(`/providers/${credential.id}`);
       onDeleted(credential.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete key');
+      setError(err instanceof Error ? err.message : t('settings.row.deleteError'));
       setDeleting(false);
     }
   }
@@ -398,14 +402,14 @@ function CredentialRow({
             <span className="font-mono tracking-wider text-foreground/80">
               {maskedKey(credential.last4)}
             </span>
-            <span>Added {formatDate(credential.createdAt)}</span>
+            <span>{t('settings.row.added', { date: formatDate(credential.createdAt) })}</span>
           </div>
         </div>
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
         {error && (
-          <span className="flex items-center gap-1.5 text-xs text-danger sm:mr-auto">
+          <span className="flex items-center gap-1.5 text-xs text-danger sm:me-auto">
             <AlertCircle className="size-3.5 shrink-0" />
             {error}
           </span>
@@ -418,17 +422,17 @@ function CredentialRow({
               onClick={() => setConfirming(false)}
               disabled={deleting}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
               {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-              {deleting ? 'Removing…' : 'Confirm delete'}
+              {deleting ? t('common.removing') : t('common.confirmDelete')}
             </Button>
           </>
         ) : (
           <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
             <Trash2 />
-            Delete
+            {t('common.delete')}
           </Button>
         )}
       </div>
