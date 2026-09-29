@@ -1,0 +1,5 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The Designer agent will replace this with the real theme (tokens, light/dark). */

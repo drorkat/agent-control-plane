@@ -1,0 +1,31 @@
+# Local development infrastructure.
+# Runs PostgreSQL (+ Adminer for a quick DB UI). The app (web + api) runs on the
+# host via `npm run dev`. Full app containerization comes in a later iteration.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-acp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acp_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-acp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:4
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

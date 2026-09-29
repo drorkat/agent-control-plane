@@ -1,0 +1,24 @@
+{
+  "name": "agent-control-plane",
+  "version": "0.0.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Open-source control plane for AI agents. Self-hosted.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @acp/api\" \"npm run dev -w @acp/web\"",
+    "build": "npm run build -w @acp/api && npm run build -w @acp/web",
+    "db:push": "npm run db:push -w @acp/api",
+    "db:generate": "npm run db:generate -w @acp/api",
+    "db:studio": "npm run db:studio -w @acp/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
