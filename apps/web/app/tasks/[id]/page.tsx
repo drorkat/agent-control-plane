@@ -15,6 +15,7 @@ import {
   Hash,
   ListTodo,
   Loader2,
+  Play,
   RefreshCw,
   Trash2,
   TriangleAlert,
@@ -112,6 +113,9 @@ export default function TaskDetailPage() {
   const [deleting, setDeleting] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
+  const [running, setRunning] = React.useState(false);
+  const [runError, setRunError] = React.useState<string | null>(null);
+
   const load = React.useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -170,6 +174,20 @@ export default function TaskDetailPage() {
     }
   }
 
+  async function handleRun() {
+    if (!id || !task?.assignedAgentId) return;
+    setRunning(true);
+    setRunError(null);
+    try {
+      const created = await api.post<{ id: string }>('/runs', { taskId: id });
+      // Navigate to the new run; keep the loading state through the transition.
+      router.push(`/runs/${created.id}`);
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : t('runs.startError'));
+      setRunning(false);
+    }
+  }
+
   return (
     <AppShell>
       <div className="mx-auto max-w-3xl space-y-6">
@@ -225,6 +243,38 @@ export default function TaskDetailPage() {
                     </Badge>
                   </div>
                 </div>
+              </div>
+
+              {/* Actions: run this task's assigned agent */}
+              <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:items-end">
+                <Button
+                  size="md"
+                  onClick={handleRun}
+                  disabled={running || !task.assignedAgentId}
+                >
+                  {running ? (
+                    <>
+                      <Loader2 className="animate-spin" />
+                      {t('runs.starting')}
+                    </>
+                  ) : (
+                    <>
+                      <Play />
+                      {t('runs.runAgent')}
+                    </>
+                  )}
+                </Button>
+                {!task.assignedAgentId && (
+                  <p className="text-xs text-muted-foreground sm:text-end">
+                    {t('runs.noAgentHint')}
+                  </p>
+                )}
+                {runError && (
+                  <p className="flex items-center gap-1.5 text-xs text-danger sm:justify-end">
+                    <TriangleAlert className="size-3.5 shrink-0" />
+                    {runError}
+                  </p>
+                )}
               </div>
             </div>
 
