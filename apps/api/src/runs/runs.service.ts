@@ -15,16 +15,12 @@ import { OpenPrFile, OpenPrInput } from '../github/github-client.interface';
 import { RepoContextService } from './repo-context.service';
 import { ChangeProposal } from './change-proposal';
 import { buildAgentLoopSystemPrompt, runAgentLoop } from './agent-loop';
+import { OPEN_PR_ACTION, gatedActionForProposal } from './gated-action';
 import {
   WebhookDispatcher,
   WebhookEvent,
 } from '../webhooks/webhook-dispatcher.service';
 import { NotificationsService } from '../notifications/notifications.service';
-
-// The representative tool action every run proposes in the MVP. Real tool-call
-// extraction from the model response comes later; for now the run engine always
-// proposes opening a pull request, which the gateway routes to human approval.
-const PROPOSED_ACTION = 'open_pull_request';
 
 @Injectable()
 export class RunsService {
@@ -164,6 +160,9 @@ export class RunsService {
           onEvent: async (type, payload) => {
             await this.addEvent(run.id, type, payload as Prisma.InputJsonObject);
           },
+          // The gateway governs every repo read: an auto policy proceeds (and is
+          // recorded as such), a blocked policy stops the read from ever running.
+          gate: (a) => this.gateway.evaluate(a),
         });
         modelText = loop.finalText;
         inputTokens = loop.inputTokens;
@@ -248,8 +247,12 @@ export class RunsService {
         return this.findOne(run.id);
       }
 
-      // Route a representative proposed action through the Tool Gateway.
-      const action = PROPOSED_ACTION;
+      // Route the run's ACTUAL proposed action through the Tool Gateway. A run
+      // that proposed file edits maps to open_pull_request (approval); one that
+      // only read/analyzed maps to read_repo (auto) and completes without a
+      // human — governance that reflects what the agent did, not a blanket
+      // "everything needs approval".
+      const action = gatedActionForProposal(proposal);
       const { decision, risk } = this.gateway.evaluate(action);
 
       if (decision === 'blocked') {
@@ -395,7 +398,9 @@ export class RunsService {
       throw new BadRequestException('Run is not awaiting approval');
     }
 
-    const action = PROPOSED_ACTION;
+    // A parked run is always an open_pull_request awaiting a human (read-only
+    // runs auto-complete and never reach here).
+    const action = OPEN_PR_ACTION;
 
     if (approved) {
       await this.addEvent(runId, 'APPROVAL_RECEIVED');

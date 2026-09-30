@@ -121,7 +121,21 @@ export interface RunAgentLoopOptions {
   seedFiles: Map<string, string>;
   /** Called for each TOOL_REQUESTED / TOOL_RESULT step so the run can log it. */
   onEvent?: (type: string, payload: Record<string, unknown>) => Promise<void>;
+  /**
+   * The Tool Gateway, consulted before each repo read (list/read → `read_repo`).
+   * This makes the gateway the real choke point for the agent's actions: a
+   * `blocked` policy is enforced here (the read never runs), and the decision is
+   * recorded on the step so an auto-allowed read is visibly governed, not
+   * ungoverned. Omitted in tests that don't exercise policy (reads then proceed).
+   */
+  gate?: (action: string) => { decision: string; risk: string };
 }
+
+/** Loop tool → the gateway action it maps to. Reads are `read_repo`. */
+const TOOL_GATEWAY_ACTION: Record<'list_files' | 'read_file', string> = {
+  list_files: 'read_repo',
+  read_file: 'read_repo',
+};
 
 /**
  * Drive the agent loop to completion (a proposal) or the step budget. Reads and
@@ -176,7 +190,19 @@ export async function runAgentLoop(
     }
 
     if (action.tool === 'list_files') {
-      await opts.onEvent?.('TOOL_REQUESTED', { tool: 'list_files' });
+      const decision =
+        opts.gate?.(TOOL_GATEWAY_ACTION.list_files)?.decision ?? 'auto';
+      await opts.onEvent?.('TOOL_REQUESTED', { tool: 'list_files', policy: decision });
+      if (decision === 'blocked') {
+        progress.push(`${progress.length + 1}. list_files → blocked by policy`);
+        steps.push({
+          index: steps.length + 1,
+          tool: 'list_files',
+          resultSummary: 'blocked by policy',
+        });
+        await opts.onEvent?.('TOOL_BLOCKED', { tool: 'list_files' });
+        continue;
+      }
       const count = opts.allPaths.length;
       progress.push(`${progress.length + 1}. list_files → ${count} files`);
       steps.push({
@@ -189,10 +215,26 @@ export async function runAgentLoop(
     }
 
     // read_file
+    const readDecision =
+      opts.gate?.(TOOL_GATEWAY_ACTION.read_file)?.decision ?? 'auto';
     await opts.onEvent?.('TOOL_REQUESTED', {
       tool: 'read_file',
       path: action.path,
+      policy: readDecision,
     });
+    if (readDecision === 'blocked') {
+      progress.push(
+        `${progress.length + 1}. read_file ${action.path} → blocked by policy`,
+      );
+      steps.push({
+        index: steps.length + 1,
+        tool: 'read_file',
+        path: action.path,
+        resultSummary: 'blocked by policy',
+      });
+      await opts.onEvent?.('TOOL_BLOCKED', { tool: 'read_file', path: action.path });
+      continue;
+    }
     let content: string | null = readFiles.get(action.path) ?? null;
     if (content === null && reads < MAX_READS) {
       try {
