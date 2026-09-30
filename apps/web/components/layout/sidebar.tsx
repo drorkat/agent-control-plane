@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
+import { usePendingApprovals } from '@/lib/approvals/context';
 import { useI18n } from '@/lib/i18n/context';
 import type { TranslationKey } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
@@ -22,7 +23,6 @@ type NavItem = {
   labelKey: TranslationKey;
   href: string;
   icon: LucideIcon;
-  badge?: string;
 };
 
 const NAV: NavItem[] = [
@@ -31,7 +31,7 @@ const NAV: NavItem[] = [
   { labelKey: 'nav.agents', href: '/agents', icon: Bot },
   { labelKey: 'nav.tasks', href: '/tasks', icon: ListTodo },
   { labelKey: 'nav.runs', href: '/runs', icon: Activity },
-  { labelKey: 'nav.approvals', href: '/approvals', icon: ShieldCheck, badge: '3' },
+  { labelKey: 'nav.approvals', href: '/approvals', icon: ShieldCheck },
   { labelKey: 'nav.audit', href: '/audit', icon: ScrollText },
   { labelKey: 'nav.settings', href: '/settings', icon: Settings },
 ];
@@ -45,6 +45,7 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const { count: pendingApprovals } = usePendingApprovals();
 
   return (
     <aside className={cn('flex h-full w-64 flex-col border-e border-border bg-card', className)}>
@@ -70,6 +71,13 @@ export function Sidebar({
           const active =
             item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
           const Icon = item.icon;
+          // Live badge: the pending-approvals count on the Approvals item only.
+          const badge =
+            item.href === '/approvals' && pendingApprovals > 0
+              ? pendingApprovals > 99
+                ? '99+'
+                : String(pendingApprovals)
+              : null;
           return (
             <Link
               key={item.href}
@@ -97,9 +105,9 @@ export function Sidebar({
                 )}
               />
               <span className="flex-1 truncate">{t(item.labelKey)}</span>
-              {item.badge && (
+              {badge && (
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[11px] font-semibold text-primary ring-1 ring-inset ring-primary/20">
-                  {item.badge}
+                  {badge}
                 </span>
               )}
             </Link>

@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/lib/auth/context';
+import { PendingApprovalsProvider } from '@/lib/approvals/context';
 import { LanguageProvider } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 
@@ -52,7 +53,9 @@ export default function RootLayout({
       </head>
       <body className={cn('min-h-screen bg-background font-sans text-foreground antialiased')}>
         <LanguageProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <PendingApprovalsProvider>{children}</PendingApprovalsProvider>
+          </AuthProvider>
         </LanguageProvider>
       </body>
     </html>

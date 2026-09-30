@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { usePendingApprovals } from '@/lib/approvals/context';
 import { useI18n } from '@/lib/i18n/context';
 import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
@@ -64,6 +65,7 @@ function riskIcon(level: string): LucideIcon {
 
 export default function ApprovalsPage() {
   const { t, lang } = useI18n();
+  const { refresh: refreshPendingBadge } = usePendingApprovals();
   const [approvals, setApprovals] = React.useState<Approval[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -78,6 +80,13 @@ export default function ApprovalsPage() {
       setError(err instanceof Error ? err.message : t('approvals.loadError'));
     }
   }, [t]);
+
+  // Reload the list and refresh the sidebar's live pending badge together, so
+  // resolving an approval updates both at once.
+  const handleResolved = React.useCallback(async () => {
+    await load();
+    await refreshPendingBadge();
+  }, [load, refreshPendingBadge]);
 
   React.useEffect(() => {
     void (async () => {
@@ -143,7 +152,7 @@ export default function ApprovalsPage() {
                     <PendingCard
                       key={approval.id}
                       approval={approval}
-                      onResolved={load}
+                      onResolved={handleResolved}
                       t={t}
                       lang={lang}
                     />
