@@ -6,13 +6,15 @@ import { AuthService } from './auth.service';
 import { AuthMiddleware } from './auth.middleware';
 import { AuthGuard } from './auth.guard';
 import { RolesGuard } from './roles.guard';
+import { authSecret } from '../common/config';
 
 // PrismaService is provided by the @Global() PrismaModule, so it does not need
 // to be imported here. The manager registers this module in app.module.ts.
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.AUTH_SECRET || 'dev-secret-change-me',
+      // No fallback: assertSecureConfig() has already guaranteed a strong secret.
+      secret: authSecret(),
       signOptions: { expiresIn: '30d' },
     }),
   ],

@@ -32,6 +32,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { api } from '@/lib/api';
 import { useI18n } from '@/lib/i18n/context';
 import type { TranslateFn, TranslationKey } from '@/lib/i18n/dictionary';
+import { runStatusLabel, runStatusVariant } from './runs/types';
 import { cn } from '@/lib/utils';
 
 // ── API shape (GET /api/dashboard/stats) ──────────────────────────────────
@@ -85,12 +86,6 @@ function formatMoney(value: number, lang: string): string {
     return `$${safe.toFixed(2)}`;
   }
 }
-
-const RUN_STATUS: Record<string, { variant: BadgeVariant; key: TranslationKey }> = {
-  running: { variant: 'primary', key: 'runs.status.running' },
-  completed: { variant: 'success', key: 'runs.status.completed' },
-  failed: { variant: 'danger', key: 'runs.status.failed' },
-};
 
 const ACTION_ICON: Record<string, LucideIcon> = {
   read_repo: BookOpen,
@@ -302,7 +297,6 @@ function RecentRunsPanel({ runs, t }: { runs: DashboardRun[]; t: TranslateFn }) 
         ) : (
           <div className="-mx-2 space-y-0.5">
             {runs.map((run) => {
-              const meta = RUN_STATUS[run.status];
               return (
                 <Link
                   key={run.id}
@@ -320,8 +314,8 @@ function RecentRunsPanel({ runs, t }: { runs: DashboardRun[]; t: TranslateFn }) 
                       {run.task?.title ?? t('runs.unknownTask')}
                     </span>
                   </span>
-                  <Badge variant={meta?.variant ?? 'neutral'} dot>
-                    {meta ? t(meta.key) : run.status}
+                  <Badge variant={runStatusVariant(run.status)} dot>
+                    {runStatusLabel(run.status, t)}
                   </Badge>
                 </Link>
               );

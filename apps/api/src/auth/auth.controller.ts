@@ -74,6 +74,11 @@ export class AuthController {
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: 'lax',
+      // Marked Secure in production (and whenever COOKIE_SECURE=1) so the session
+      // cookie is never sent over plain HTTP. Left off in local dev over http.
+      secure:
+        process.env.COOKIE_SECURE === '1' ||
+        process.env.NODE_ENV === 'production',
       path: '/',
       maxAge: SESSION_MAX_AGE,
     });

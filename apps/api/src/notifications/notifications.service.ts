@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { currentOrgId } from '../common/tenant';
+import { currentOrgId, currentUserId } from '../common/tenant';
 
 /**
  * Input to {@link NotificationsService.notify}. `organizationId` is optional so
@@ -53,27 +53,39 @@ export class NotificationsService {
     }
   }
 
-  /** Notifications for the current org, newest first (capped for the bell). */
+  /**
+   * Visibility scope: notifications for the current org that are either org-wide
+   * (`userId` null) or addressed to the current user — so a user never sees a
+   * notification targeted at someone else.
+   */
+  private visibleWhere() {
+    return {
+      organizationId: currentOrgId(),
+      OR: [{ userId: null }, { userId: currentUserId() }],
+    };
+  }
+
+  /** Notifications visible to the current user, newest first (capped for the bell). */
   findAll() {
     return this.prisma.notification.findMany({
-      where: { organizationId: currentOrgId() },
+      where: this.visibleWhere(),
       orderBy: { createdAt: 'desc' },
       take: 30,
     });
   }
 
-  /** Count of unread notifications for the current org. */
+  /** Count of unread notifications visible to the current user. */
   async unreadCount(): Promise<{ count: number }> {
     const count = await this.prisma.notification.count({
-      where: { organizationId: currentOrgId(), read: false },
+      where: { ...this.visibleWhere(), read: false },
     });
     return { count };
   }
 
-  /** Mark every unread notification in the current org as read. */
+  /** Mark every unread notification visible to the current user as read. */
   async markAllRead(): Promise<{ updated: number }> {
     const result = await this.prisma.notification.updateMany({
-      where: { organizationId: currentOrgId(), read: false },
+      where: { ...this.visibleWhere(), read: false },
       data: { read: true },
     });
     return { updated: result.count };

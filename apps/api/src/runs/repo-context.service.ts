@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { GitHubClientFactory } from '../github/github-client.factory';
 import { RepoFileRef } from '../github/github-client.interface';
 
@@ -37,6 +37,8 @@ const MAX_FILE_CONTENT = 20_000;
  */
 @Injectable()
 export class RepoContextService {
+  private readonly logger = new Logger(RepoContextService.name);
+
   constructor(private readonly github: GitHubClientFactory) {}
 
   /**
@@ -81,9 +83,17 @@ export class RepoContextService {
         allPaths,
         promptSection: buildPromptSection(allPaths, files),
       };
-    } catch {
+    } catch (err) {
       // Any GitHub/network failure: fall back to context-free planning. A
-      // context-gathering error must never surface to the run.
+      // context-gathering error must never surface to the run — but it must not
+      // vanish silently either (an operator seeing "plan only" on a repo-linked
+      // task needs a breadcrumb), so log the reason. No token material is ever in
+      // these messages.
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Failed to gather repo context for ${owner}/${repo}; ` +
+          `falling back to context-free planning: ${message}`,
+      );
       return null;
     }
   }

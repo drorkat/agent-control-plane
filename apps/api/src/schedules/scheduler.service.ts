@@ -80,9 +80,16 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
                 schedule.taskId,
                 schedule.agentId ?? undefined,
               );
-            } catch {
-              // A failed run is already recorded on the run itself; the schedule
-              // still advances below so it retries on its next interval.
+            } catch (err) {
+              // A run that actually started records its own failure on the run.
+              // But some failures (e.g. the task's agent was later unassigned)
+              // reject inside runs.start() BEFORE any Run row exists, which would
+              // otherwise be an invisible no-op — so log the reason here. The
+              // schedule still advances below and retries next interval.
+              const message = err instanceof Error ? err.message : String(err);
+              this.logger.warn(
+                `Scheduled run for schedule "${schedule.id}" did not start: ${message}`,
+              );
             }
           });
 

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Schedule } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
@@ -24,7 +28,7 @@ export class SchedulesService {
   async create(dto: CreateScheduleDto): Promise<ScheduleView> {
     const task = await this.prisma.task.findFirst({
       where: { id: dto.taskId, organizationId: currentOrgId() },
-      select: { id: true },
+      select: { id: true, assignedAgentId: true },
     });
     if (!task) {
       throw new NotFoundException(`Task "${dto.taskId}" not found`);
@@ -38,6 +42,18 @@ export class SchedulesService {
       if (!agent) {
         throw new NotFoundException(`Agent "${dto.agentId}" not found`);
       }
+    }
+
+    // A schedule needs an agent to run: either an explicit override here, or one
+    // assigned on the task. Without either, every tick would reject inside
+    // runs.start() before a Run row is even created — a schedule that looks
+    // healthy (lastRunAt advancing) but silently does nothing forever. Refuse it
+    // at creation instead of shipping that trap.
+    if (!dto.agentId && !task.assignedAgentId) {
+      throw new BadRequestException(
+        'This task has no assigned agent. Assign an agent to the task, or ' +
+          'pick an agent for the schedule.',
+      );
     }
 
     const nextRunAt = new Date(Date.now() + dto.intervalMinutes * 60_000);

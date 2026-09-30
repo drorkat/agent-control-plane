@@ -1,7 +1,16 @@
 import type { BadgeVariant } from '@/components/ui/badge';
 import type { TranslateFn, TranslationKey } from '@/lib/i18n/dictionary';
 
-export type RunStatus = 'running' | 'completed' | 'failed';
+// Mirrors the Run.status values the API can emit (see prisma schema). Keeping
+// this in sync with the backend is what stops a raw enum ("waiting_approval")
+// leaking into the UI instead of a translated, colored badge.
+export type RunStatus =
+  | 'created'
+  | 'running'
+  | 'waiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 /** Minimal agent reference embedded in a run. */
 export interface RunAgentRef {
@@ -70,6 +79,11 @@ export function runStatusVariant(status: string): BadgeVariant {
       return 'success';
     case 'failed':
       return 'danger';
+    case 'waiting_approval':
+      return 'warning';
+    case 'cancelled':
+    case 'created':
+      return 'neutral';
     case 'running':
     default:
       return 'primary';
@@ -77,9 +91,12 @@ export function runStatusVariant(status: string): BadgeVariant {
 }
 
 const STATUS_LABEL_KEYS: Record<RunStatus, TranslationKey> = {
+  created: 'runs.status.created',
   running: 'runs.status.running',
+  waiting_approval: 'runs.status.waiting_approval',
   completed: 'runs.status.completed',
   failed: 'runs.status.failed',
+  cancelled: 'runs.status.cancelled',
 };
 
 /** Translated status name, falling back to the raw value for unknown statuses. */

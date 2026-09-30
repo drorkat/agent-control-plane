@@ -109,10 +109,12 @@ export class RunsService {
     const taskText =
       task.title + (task.description ? '\n\n' + task.description : '');
 
-    // If the task's project is linked to a GitHub repo, the agent reads real
-    // code and works in multiple tool steps (list files, read files) before
-    // proposing actual file edits. Without a repo it falls back to a single
-    // context-free planning call and the proposal-document PR path.
+    // If the task's project is linked to a GitHub repo (and GitHub is connected),
+    // the agent reads real code and works in multiple tool steps (list files,
+    // read files) before proposing actual file edits, then requests approval to
+    // open a pull request. Without an openable repo it makes a single
+    // context-free planning call and completes with that plan — there is no PR to
+    // gate, so it never asks for an approval it could not fulfil.
     const project = await this.prisma.project.findFirst({
       where: { id: task.projectId, organizationId: currentOrgId() },
       select: { repoOwner: true, repoName: true },
@@ -208,6 +210,42 @@ export class RunsService {
           }),
         };
         await this.addEvent(run.id, 'CHANGES_PROPOSED', changes);
+      }
+
+      // If the agent cannot actually open a pull request — no repo linked, or
+      // GitHub not connected — there is no external action to gate. Requesting a
+      // human approval here would be a dead end: approving it only fails later in
+      // executeOpenPullRequest ("no repository linked"). Instead complete the run
+      // now with the plan the agent produced.
+      const canOpenPullRequest = !!(
+        client &&
+        project?.repoOwner &&
+        project?.repoName
+      );
+      if (!canOpenPullRequest) {
+        const reason =
+          project?.repoOwner && project?.repoName
+            ? 'GitHub is not connected, so no pull request was opened — the agent produced a plan only.'
+            : 'No GitHub repository is linked to this project, so the agent produced a plan only.';
+        await this.addEvent(run.id, 'RUN_COMPLETED', { planOnly: true, reason });
+        await this.prisma.run.update({
+          where: { id: run.id },
+          data: { status: 'completed', completedAt: new Date() },
+        });
+        this.emit(
+          'run.completed',
+          { runId: run.id, task: task.title, status: 'completed', planOnly: true },
+          {
+            type: 'run.completed',
+            title: 'Run completed (plan only)',
+            body: task.title,
+          },
+        );
+        await this.prisma.agent.update({
+          where: { id: agent.id },
+          data: { status: 'idle' },
+        });
+        return this.findOne(run.id);
       }
 
       // Route a representative proposed action through the Tool Gateway.

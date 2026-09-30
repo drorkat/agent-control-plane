@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -59,6 +60,12 @@ export class MembersService {
    * only the safe view is returned — the hash is never echoed back.
    */
   async create(dto: CreateMemberDto): Promise<SafeMember> {
+    // Creating an owner is an owner-only action too — otherwise an admin could
+    // mint a fresh owner account and bypass the guard on updateRole().
+    if (dto.role === 'owner') {
+      await this.assertActorIsOwner();
+    }
+
     const email = dto.email.trim().toLowerCase();
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -95,6 +102,12 @@ export class MembersService {
       throw new NotFoundException(`Member ${id} not found`);
     }
 
+    // Granting or changing the owner role is an owner-only action (an admin must
+    // not be able to promote anyone — including themselves — to owner).
+    if (dto.role === 'owner' || existing.role === 'owner') {
+      await this.assertActorIsOwner();
+    }
+
     if (existing.role === 'owner' && dto.role !== 'owner') {
       await this.assertNotLastOwner();
     }
@@ -125,10 +138,31 @@ export class MembersService {
     }
 
     if (existing.role === 'owner') {
+      // Removing an owner is an owner-only action, and never the last one.
+      await this.assertActorIsOwner();
       await this.assertNotLastOwner();
     }
 
     await this.prisma.user.delete({ where: { id } });
+  }
+
+  /**
+   * Guard an owner-only action: the current user must themselves be an owner of
+   * this org. Blocks an admin from granting/removing the owner role.
+   */
+  private async assertActorIsOwner(): Promise<void> {
+    const actorId = currentUserId();
+    const actor = actorId
+      ? await this.prisma.user.findFirst({
+          where: { id: actorId, organizationId: currentOrgId() },
+          select: { role: true },
+        })
+      : null;
+    if (!actor || actor.role !== 'owner') {
+      throw new ForbiddenException(
+        'Only an owner can grant or change the owner role',
+      );
+    }
   }
 
   /**

@@ -9,11 +9,15 @@ import {
 } from '@nestjs/common';
 import { WebhooksService } from './webhooks.service';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
+import { Roles } from '../auth/roles.decorator';
 
 // Global prefix `api` is applied in main.ts, so these routes live at
 // /api/webhooks. The signing secret is returned only by POST (create) and is
 // never exposed again by any GET — there is intentionally no "reveal" endpoint.
+// Webhooks are workspace integration config (and can exfiltrate governance
+// events), so the whole controller is restricted to owners/admins.
 @Controller('webhooks')
+@Roles('owner', 'admin')
 export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
 

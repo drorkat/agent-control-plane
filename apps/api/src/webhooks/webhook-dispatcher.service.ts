@@ -149,6 +149,9 @@ export class WebhookDispatcher {
           'User-Agent': 'agent-control-plane',
         },
         body,
+        // Never follow redirects: a public URL must not be able to bounce the
+        // delivery to an internal address after passing the SSRF host check.
+        redirect: 'error',
         signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
       });
       statusCode = res.status;
