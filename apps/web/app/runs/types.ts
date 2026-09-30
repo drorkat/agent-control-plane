@@ -39,6 +39,11 @@ export type RunEventType =
   | 'RUN_CREATED'
   | 'MODEL_STARTED'
   | 'MODEL_RESPONSE'
+  | 'APPROVAL_REQUESTED'
+  | 'APPROVAL_RECEIVED'
+  | 'APPROVAL_REJECTED'
+  | 'TOOL_BLOCKED'
+  | 'TOOL_EXECUTED'
   | 'RUN_COMPLETED'
   | 'RUN_FAILED';
 
@@ -83,6 +88,11 @@ const EVENT_LABEL_KEYS: Record<RunEventType, TranslationKey> = {
   RUN_CREATED: 'runs.event.RUN_CREATED',
   MODEL_STARTED: 'runs.event.MODEL_STARTED',
   MODEL_RESPONSE: 'runs.event.MODEL_RESPONSE',
+  APPROVAL_REQUESTED: 'runs.event.APPROVAL_REQUESTED',
+  APPROVAL_RECEIVED: 'runs.event.APPROVAL_RECEIVED',
+  APPROVAL_REJECTED: 'runs.event.APPROVAL_REJECTED',
+  TOOL_BLOCKED: 'runs.event.TOOL_BLOCKED',
+  TOOL_EXECUTED: 'runs.event.TOOL_EXECUTED',
   RUN_COMPLETED: 'runs.event.RUN_COMPLETED',
   RUN_FAILED: 'runs.event.RUN_FAILED',
 };
@@ -99,14 +109,32 @@ export function runEventTone(type: string): 'neutral' | 'primary' | 'success' | 
     case 'RUN_COMPLETED':
       return 'success';
     case 'RUN_FAILED':
+    case 'APPROVAL_REJECTED':
+    case 'TOOL_BLOCKED':
       return 'danger';
     case 'MODEL_STARTED':
     case 'MODEL_RESPONSE':
+    case 'APPROVAL_RECEIVED':
+    case 'TOOL_EXECUTED':
       return 'primary';
     case 'RUN_CREATED':
+    case 'APPROVAL_REQUESTED':
     default:
       return 'neutral';
   }
+}
+
+/**
+ * The pull-request URL surfaced by an `open_pull_request` tool execution, read
+ * defensively from `payload.result.pullRequestUrl`. Returns null when absent.
+ */
+export function pullRequestUrlFromEvent(event: RunEvent): string | null {
+  const result = event.payload?.result;
+  if (result && typeof result === 'object') {
+    const url = (result as Record<string, unknown>).pullRequestUrl;
+    if (typeof url === 'string' && url.trim()) return url;
+  }
+  return null;
 }
 
 /** `provider · model`, shown verbatim (never translated). */

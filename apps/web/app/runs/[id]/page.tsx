@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Cpu,
   DollarSign,
+  ExternalLink,
+  GitPullRequest,
   Hash,
   ListTodo,
   RefreshCw,
@@ -50,6 +52,7 @@ import {
   formatNumber,
   formatRelativeTime,
   providerModel,
+  pullRequestUrlFromEvent,
   runDurationMs,
   runEventLabel,
   runEventTone,
@@ -434,6 +437,7 @@ function TimelineItem({
   const rawMessage = event.payload?.message;
   const message =
     event.type === 'RUN_FAILED' && typeof rawMessage === 'string' ? rawMessage : null;
+  const pullRequestUrl = pullRequestUrlFromEvent(event);
 
   return (
     <li className="relative flex gap-3 ps-6">
@@ -459,6 +463,18 @@ function TimelineItem({
           <p dir="auto" className="mt-1 whitespace-pre-wrap break-words text-sm text-danger">
             {message}
           </p>
+        )}
+        {pullRequestUrl && (
+          <a
+            href={pullRequestUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1 text-sm font-medium text-primary shadow-xs transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <GitPullRequest className="size-4 shrink-0" />
+            {t('runs.viewPullRequest')}
+            <ExternalLink className="size-3.5 shrink-0" />
+          </a>
         )}
       </div>
     </li>

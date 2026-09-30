@@ -10,6 +10,8 @@ import { ProviderFactory } from '../ai/provider.factory';
 import { computeCostUsd } from '../ai/pricing';
 import { GatewayService } from '../gateway/gateway.service';
 import { AuditService } from '../audit/audit.service';
+import { GitHubClientFactory } from '../github/github-client.factory';
+import { OpenPrInput } from '../github/github-client.interface';
 
 // The representative tool action every run proposes in the MVP. Real tool-call
 // extraction from the model response comes later; for now the run engine always
@@ -23,6 +25,7 @@ export class RunsService {
     private readonly factory: ProviderFactory,
     private readonly gateway: GatewayService,
     private readonly audit: AuditService,
+    private readonly github: GitHubClientFactory,
   ) {}
 
   /**
@@ -224,26 +227,44 @@ export class RunsService {
 
     if (approved) {
       await this.addEvent(runId, 'APPROVAL_RECEIVED');
-      // Simulate executing the approved action. Real GitHub integration lands
-      // later; the result is a mock so the UI has a link to render.
-      const result = {
-        pullRequestUrl: 'https://example.com/pull/1',
-        note: 'mock — real GitHub comes later',
-      };
-      await this.addEvent(runId, 'TOOL_EXECUTED', { action, result });
-      await this.audit.record({
-        actorType: 'user',
-        actorId: resolvedByUserId,
-        action: 'tool.executed',
-        resourceType: 'run',
-        resourceId: runId,
-        metadata: { action, result },
-      });
-      await this.addEvent(runId, 'RUN_COMPLETED');
-      await this.prisma.run.update({
-        where: { id: runId },
-        data: { status: 'completed', completedAt: new Date() },
-      });
+      // Now that a human has approved, actually execute the tool: open a real
+      // GitHub pull request (branch -> commit -> PR). A failure here (no repo
+      // linked, GitHub not connected, or an API error) fails the run cleanly
+      // rather than pretending the PR was opened.
+      try {
+        const result = await this.executeOpenPullRequest(run);
+        await this.addEvent(runId, 'TOOL_EXECUTED', { action, result });
+        await this.audit.record({
+          actorType: 'user',
+          actorId: resolvedByUserId,
+          action: 'tool.executed',
+          resourceType: 'run',
+          resourceId: runId,
+          metadata: { action, result },
+        });
+        await this.addEvent(runId, 'RUN_COMPLETED');
+        await this.prisma.run.update({
+          where: { id: runId },
+          data: { status: 'completed', completedAt: new Date() },
+        });
+      } catch (err) {
+        // The GitHub client never puts token material in its error messages, so
+        // this is safe to record and show.
+        const message = err instanceof Error ? err.message : String(err);
+        await this.audit.record({
+          actorType: 'user',
+          actorId: resolvedByUserId,
+          action: 'tool.failed',
+          resourceType: 'run',
+          resourceId: runId,
+          metadata: { action, message },
+        });
+        await this.addEvent(runId, 'RUN_FAILED', { message });
+        await this.prisma.run.update({
+          where: { id: runId },
+          data: { status: 'failed', completedAt: new Date() },
+        });
+      }
     } else {
       await this.addEvent(runId, 'APPROVAL_REJECTED');
       await this.audit.record({
@@ -269,6 +290,96 @@ export class RunsService {
     });
 
     return this.findOne(runId);
+  }
+
+  /**
+   * Execute the approved `open_pull_request` action: resolve the run's repo from
+   * its task -> project, build a proposal document from the agent's latest model
+   * response, and open a real GitHub pull request (branch -> commit -> PR).
+   * Throws a user-facing error when the project has no repo linked or GitHub is
+   * not connected; the caller turns that into a failed run. No token material is
+   * read here — the client factory owns decryption.
+   */
+  private async executeOpenPullRequest(run: {
+    id: string;
+    taskId: string | null;
+  }): Promise<Prisma.InputJsonObject> {
+    // Resolve the target repository from the run's task -> project.
+    let task:
+      | { title: string; description: string | null; projectId: string }
+      | null = null;
+    let project: { repoOwner: string | null; repoName: string | null } | null =
+      null;
+    if (run.taskId) {
+      task = await this.prisma.task.findFirst({
+        where: { id: run.taskId, organizationId: currentOrgId() },
+        select: { title: true, description: true, projectId: true },
+      });
+      if (task) {
+        project = await this.prisma.project.findFirst({
+          where: { id: task.projectId, organizationId: currentOrgId() },
+          select: { repoOwner: true, repoName: true },
+        });
+      }
+    }
+
+    if (!project?.repoOwner || !project?.repoName) {
+      throw new Error(
+        'No GitHub repository is linked to this project. Set the repo owner and name on the project, then try again.',
+      );
+    }
+
+    const client = await this.github.forCurrentOrg();
+    if (!client) {
+      throw new Error(
+        'GitHub is not connected. Add a GitHub token in Settings to open pull requests.',
+      );
+    }
+
+    // Build the proposal document from the agent's latest model response.
+    const modelEvent = await this.prisma.runEvent.findFirst({
+      where: { runId: run.id, type: 'MODEL_RESPONSE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    const proposal =
+      modelEvent && modelEvent.payload && typeof modelEvent.payload === 'object'
+        ? String((modelEvent.payload as { text?: unknown }).text ?? '')
+        : '';
+
+    const title = task?.title?.trim() || 'Agent Control Plane proposal';
+    const branch = `acp/run-${run.id.slice(0, 8)}`;
+    const body = [
+      'Proposed by an Agent Control Plane agent and approved by a human reviewer.',
+      '',
+      '## Task',
+      title,
+      ...(task?.description ? ['', task.description] : []),
+      '',
+      '## Proposal',
+      proposal || '_No proposal text was produced._',
+    ].join('\n');
+
+    const input: OpenPrInput = {
+      owner: project.repoOwner,
+      repo: project.repoName,
+      title,
+      body,
+      branch,
+      files: [
+        { path: `acp/proposals/${run.id}.md`, content: `# ${title}\n\n${body}\n` },
+      ],
+    };
+
+    const pr = await client.openPullRequest(input);
+
+    // Only JSON-safe, non-secret fields — never undefined (Prisma JSON rejects it).
+    const result: Prisma.InputJsonObject = {
+      opened: true,
+      pullRequestUrl: pr.pullRequestUrl,
+      branch: pr.branch,
+      ...(typeof pr.number === 'number' ? { number: pr.number } : {}),
+    };
+    return result;
   }
 
   /** All runs in the default org, newest first, with agent/task summaries. */

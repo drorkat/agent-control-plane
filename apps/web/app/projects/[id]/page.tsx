@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FolderKanban,
   GitBranch,
+  Github,
   Hash,
   Loader2,
   RefreshCw,
@@ -35,6 +36,8 @@ type Project = {
   name: string;
   description: string | null;
   repoUrl: string | null;
+  repoOwner: string | null;
+  repoName: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -227,28 +230,48 @@ export default function ProjectDetailPage() {
                   </p>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
                     {t('projects.detail.repository')}
                   </p>
-                  {project.repoUrl ? (
-                    isHttpUrl(project.repoUrl) ? (
+                  {project.repoOwner && project.repoName && (
+                    <div>
                       <a
-                        href={project.repoUrl}
+                        href={`https://github.com/${project.repoOwner}/${project.repoName}`}
                         target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex max-w-full items-center gap-1.5 break-all text-sm font-medium text-primary transition-colors hover:underline"
+                        rel="noopener noreferrer"
+                        dir="ltr"
+                        title={t('projects.viewRepo')}
+                        className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-sm font-medium text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                       >
-                        <GitBranch className="size-4 shrink-0" />
-                        <span className="truncate">{project.repoUrl}</span>
+                        <Github className="size-4 shrink-0" />
+                        <span className="truncate">
+                          {project.repoOwner}/{project.repoName}
+                        </span>
                         <ExternalLink className="size-3.5 shrink-0" />
                       </a>
-                    ) : (
-                      <code className="break-all rounded-md bg-muted px-2 py-1 font-mono text-sm text-foreground">
-                        {project.repoUrl}
-                      </code>
-                    )
-                  ) : (
+                    </div>
+                  )}
+                  {project.repoUrl ? (
+                    <div>
+                      {isHttpUrl(project.repoUrl) ? (
+                        <a
+                          href={project.repoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex max-w-full items-center gap-1.5 break-all text-sm font-medium text-primary transition-colors hover:underline"
+                        >
+                          <GitBranch className="size-4 shrink-0" />
+                          <span className="truncate">{project.repoUrl}</span>
+                          <ExternalLink className="size-3.5 shrink-0" />
+                        </a>
+                      ) : (
+                        <code className="break-all rounded-md bg-muted px-2 py-1 font-mono text-sm text-foreground">
+                          {project.repoUrl}
+                        </code>
+                      )}
+                    </div>
+                  ) : project.repoOwner && project.repoName ? null : (
                     <p className="text-sm text-muted-foreground">
                       {t('projects.detail.noRepoLinked')}
                     </p>

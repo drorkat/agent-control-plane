@@ -127,6 +127,11 @@ const en = {
   'projects.form.descriptionPlaceholder': 'What is this project about?',
   'projects.form.repoUrl': 'Repository URL',
   'projects.form.repoHint': 'Optional. Link a Git repository so agents can work against it.',
+  'projects.repoOwner': 'Repo owner',
+  'projects.repoOwnerPlaceholder': 'e.g. acme',
+  'projects.repoName': 'Repo name',
+  'projects.repoNamePlaceholder': 'e.g. billing-service',
+  'projects.viewRepo': 'View on GitHub',
   'projects.form.nameRequired': 'Project name is required.',
   'projects.createError': 'Failed to create project',
   'projects.loadError': 'Failed to load projects',
@@ -267,6 +272,12 @@ const en = {
   'runs.event.MODEL_RESPONSE': 'Model responded',
   'runs.event.RUN_COMPLETED': 'Run completed',
   'runs.event.RUN_FAILED': 'Run failed',
+  'runs.event.TOOL_EXECUTED': 'Tool executed',
+  'runs.event.APPROVAL_REQUESTED': 'Approval requested',
+  'runs.event.APPROVAL_RECEIVED': 'Approval received',
+  'runs.event.APPROVAL_REJECTED': 'Approval rejected',
+  'runs.event.TOOL_BLOCKED': 'Tool blocked',
+  'runs.viewPullRequest': 'View Pull Request',
   'runs.output.title': 'Output',
   'runs.output.desc': "The model's response for this run.",
   'runs.output.empty': 'No output was produced yet.',
@@ -365,6 +376,20 @@ const en = {
     'Add an Anthropic or OpenAI API key so your agents can call the models. Keys are encrypted at rest.',
   'settings.row.added': 'Added {date}',
   'settings.row.deleteError': 'Failed to delete key',
+
+  // ── settings · GitHub ───────────────────────────────────────────────────
+  'settings.github.title': 'GitHub',
+  'settings.github.description':
+    'Connect a GitHub account so your agents can read repositories and open pull requests you approve.',
+  'settings.github.connect': 'Connect',
+  'settings.github.disconnect': 'Disconnect',
+  'settings.github.token': 'Access token',
+  'settings.github.tokenHelp':
+    'Use a GitHub Personal Access Token with the repo scope. Stored encrypted — you won’t be able to view it again after saving.',
+  'settings.github.connectedAs': 'Connected as',
+  'settings.github.notConnected': 'No GitHub account is connected yet.',
+  'settings.github.scopes': 'Scopes',
+  'settings.github.verifyError': 'Could not verify GitHub token',
 };
 
 /** A dot-namespaced key present in the dictionary; checked at compile time. */
@@ -491,6 +516,11 @@ const he: Record<TranslationKey, string> = {
   'projects.form.descriptionPlaceholder': 'במה עוסק הפרויקט הזה?',
   'projects.form.repoUrl': 'כתובת מאגר',
   'projects.form.repoHint': 'אופציונלי. קשר מאגר Git כדי שהסוכנים יוכלו לעבוד מולו.',
+  'projects.repoOwner': 'בעלים (Owner)',
+  'projects.repoOwnerPlaceholder': 'לדוגמה, acme',
+  'projects.repoName': 'שם מאגר',
+  'projects.repoNamePlaceholder': 'לדוגמה, billing-service',
+  'projects.viewRepo': 'צפייה ב-GitHub',
   'projects.form.nameRequired': 'שם הפרויקט הוא שדה חובה.',
   'projects.createError': 'יצירת הפרויקט נכשלה',
   'projects.loadError': 'טעינת הפרויקטים נכשלה',
@@ -628,6 +658,12 @@ const he: Record<TranslationKey, string> = {
   'runs.event.MODEL_RESPONSE': 'המודל הגיב',
   'runs.event.RUN_COMPLETED': 'הריצה הושלמה',
   'runs.event.RUN_FAILED': 'הריצה נכשלה',
+  'runs.event.TOOL_EXECUTED': 'הכלי הופעל',
+  'runs.event.APPROVAL_REQUESTED': 'התבקש אישור',
+  'runs.event.APPROVAL_RECEIVED': 'התקבל אישור',
+  'runs.event.APPROVAL_REJECTED': 'האישור נדחה',
+  'runs.event.TOOL_BLOCKED': 'הכלי נחסם',
+  'runs.viewPullRequest': 'צפייה ב-Pull Request',
   'runs.output.title': 'פלט',
   'runs.output.desc': 'תגובת המודל עבור ריצה זו.',
   'runs.output.empty': 'עדיין לא הופק פלט.',
@@ -725,6 +761,20 @@ const he: Record<TranslationKey, string> = {
     'הוסף מפתח API של Anthropic או OpenAI כדי שהסוכנים יוכלו לקרוא למודלים. המפתחות מוצפנים באחסון.',
   'settings.row.added': 'נוסף {date}',
   'settings.row.deleteError': 'מחיקת המפתח נכשלה',
+
+  // ── settings · GitHub ───────────────────────────────────────────────────
+  'settings.github.title': 'GitHub',
+  'settings.github.description':
+    'חבר חשבון GitHub כדי שהסוכנים יוכלו לקרוא מאגרים ולפתוח בקשות משיכה שאתה מאשר.',
+  'settings.github.connect': 'התחבר',
+  'settings.github.disconnect': 'נתק',
+  'settings.github.token': 'אסימון גישה (Token)',
+  'settings.github.tokenHelp':
+    'השתמש באסימון גישה אישי (PAT) של GitHub עם היקף ההרשאה repo. מאוחסן מוצפן — לא תוכל לצפות בו שוב לאחר השמירה.',
+  'settings.github.connectedAs': 'מחובר כ-',
+  'settings.github.notConnected': 'עדיין לא מחובר חשבון GitHub.',
+  'settings.github.scopes': 'הרשאות',
+  'settings.github.verifyError': 'לא ניתן היה לאמת את אסימון ה-GitHub',
 };
 
 export const dictionary: Record<'en' | 'he', Record<TranslationKey, string>> = { en, he };

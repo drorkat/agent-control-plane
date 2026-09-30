@@ -43,6 +43,8 @@ export class ProjectsService {
         name: dto.name.trim(),
         description: normalizeOptional(dto.description),
         repoUrl: normalizeOptional(dto.repoUrl),
+        repoOwner: normalizeOptional(dto.repoOwner),
+        repoName: normalizeOptional(dto.repoName),
       },
     });
   }
@@ -61,6 +63,12 @@ export class ProjectsService {
           : {}),
         ...(dto.repoUrl !== undefined
           ? { repoUrl: normalizeOptional(dto.repoUrl) }
+          : {}),
+        ...(dto.repoOwner !== undefined
+          ? { repoOwner: normalizeOptional(dto.repoOwner) }
+          : {}),
+        ...(dto.repoName !== undefined
+          ? { repoName: normalizeOptional(dto.repoName) }
           : {}),
       },
     });

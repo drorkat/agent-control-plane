@@ -12,6 +12,7 @@ import { AuditModule } from './audit/audit.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { GitHubModule } from './github/github.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -26,6 +27,7 @@ import { HealthController } from './health/health.controller';
     GatewayModule,
     AuditModule,
     AiModule,
+    GitHubModule,
     RunsModule,
     ApprovalsModule,
     DashboardModule,

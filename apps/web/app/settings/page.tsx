@@ -3,13 +3,16 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  Github,
   KeyRound,
+  Link2,
   Loader2,
   Plus,
   RotateCcw,
   ShieldCheck,
   Trash2,
   TriangleAlert,
+  Unlink,
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
@@ -18,6 +21,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import {
+  connectGithub,
+  disconnectGithub,
+  getGithubConnection,
+  type GithubConnection,
+} from '@/lib/github';
 import { useI18n } from '@/lib/i18n/context';
 import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
@@ -353,8 +362,220 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
+
+        {/* GitHub integration section */}
+        <GithubSection t={t} />
       </div>
     </AppShell>
+  );
+}
+
+function GithubSection({ t }: { t: TranslateFn }) {
+  const [connection, setConnection] = React.useState<GithubConnection | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [token, setToken] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
+
+  const [disconnecting, setDisconnecting] = React.useState(false);
+  const [disconnectError, setDisconnectError] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getGithubConnection();
+      setConnection(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.loadError'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleConnect(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = token.trim();
+    if (!trimmed) {
+      setFormError(t('settings.github.verifyError'));
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const created = await connectGithub(trimmed);
+      setConnection(created);
+      setToken('');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('settings.github.verifyError'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!connection) return;
+    setDisconnecting(true);
+    setDisconnectError(null);
+    try {
+      await disconnectGithub(connection.id);
+      setConnection(null);
+      setToken('');
+    } catch (err) {
+      setDisconnectError(err instanceof Error ? err.message : t('settings.row.deleteError'));
+      setDisconnecting(false);
+    }
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
+          {t('settings.github.title')}
+        </h2>
+        <p className="max-w-prose text-sm text-muted-foreground">
+          {t('settings.github.description')}
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-5">
+          {loading ? (
+            <div className="flex items-center gap-3">
+              <div className="size-10 shrink-0 animate-pulse rounded-lg bg-muted" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                <div className="h-3 w-56 max-w-full animate-pulse rounded bg-muted" />
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">
+              <span className="grid size-11 place-items-center rounded-full bg-danger/10 text-danger ring-1 ring-inset ring-danger/25">
+                <TriangleAlert className="size-5" />
+              </span>
+              <p className="mx-auto max-w-sm text-sm text-muted-foreground">{error}</p>
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
+                <RotateCcw />
+                {t('common.tryAgain')}
+              </Button>
+            </div>
+          ) : connection ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Github className="size-5" />
+                </span>
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm text-foreground">
+                    <span className="text-muted-foreground">
+                      {t('settings.github.connectedAs')}
+                    </span>{' '}
+                    <span className="font-semibold" dir="ltr">
+                      {connection.accountLogin ?? '—'}
+                    </span>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                    {connection.last4 && (
+                      <span className="font-mono tracking-wider text-foreground/80">
+                        {maskedKey(connection.last4)}
+                      </span>
+                    )}
+                    {connection.scopes && (
+                      <span>
+                        {t('settings.github.scopes')}:{' '}
+                        <span className="font-mono" dir="ltr">
+                          {connection.scopes}
+                        </span>
+                      </span>
+                    )}
+                    <span>
+                      {t('settings.row.added', { date: formatDate(connection.createdAt) })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                {disconnectError && (
+                  <span className="flex items-center gap-1.5 text-xs text-danger sm:me-auto">
+                    <AlertCircle className="size-3.5 shrink-0" />
+                    {disconnectError}
+                  </span>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
+                >
+                  {disconnecting ? <Loader2 className="animate-spin" /> : <Unlink />}
+                  {disconnecting ? t('common.removing') : t('settings.github.disconnect')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleConnect} className="space-y-4" noValidate>
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <Github className="size-5" />
+                </span>
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.github.notConnected')}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="github-token" className={labelClass}>
+                  {t('settings.github.token')}
+                </label>
+                <Input
+                  id="github-token"
+                  type="password"
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  placeholder="ghp_…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={submitting}
+                />
+                <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                  <ShieldCheck className="size-3.5 shrink-0 translate-y-0.5" />
+                  <span>{t('settings.github.tokenHelp')}</span>
+                </p>
+              </div>
+
+              <div className="flex flex-col-reverse items-stretch gap-2 pt-1 sm:flex-row sm:items-center sm:justify-end">
+                {formError && (
+                  <p className="flex items-center gap-1.5 text-sm text-danger sm:me-auto">
+                    <TriangleAlert className="size-4 shrink-0" />
+                    {formError}
+                  </p>
+                )}
+                <Button type="submit" size="md" disabled={submitting || !token.trim()}>
+                  {submitting ? (
+                    <>
+                      <Loader2 className="animate-spin" />
+                      {t('common.saving')}
+                    </>
+                  ) : (
+                    <>
+                      <Link2 />
+                      {t('settings.github.connect')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 

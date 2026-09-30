@@ -7,6 +7,7 @@ import {
   FolderKanban,
   FolderPlus,
   GitBranch,
+  Github,
   Loader2,
   Plus,
   RefreshCw,
@@ -29,6 +30,8 @@ type Project = {
   name: string;
   description: string | null;
   repoUrl: string | null;
+  repoOwner: string | null;
+  repoName: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -56,6 +59,7 @@ function formatDate(iso: string): string {
 
 function ProjectCard({ project, t }: { project: Project; t: TranslateFn }) {
   const connected = Boolean(project.repoUrl);
+  const hasGithubRepo = Boolean(project.repoOwner && project.repoName);
   return (
     <Link
       href={`/projects/${project.id}`}
@@ -82,8 +86,15 @@ function ProjectCard({ project, t }: { project: Project; t: TranslateFn }) {
             {project.description?.trim() || t('common.noDescription')}
           </p>
 
-          <div className="mt-4 flex items-center gap-2 pt-1">
-            {connected ? (
+          <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 pt-1">
+            {hasGithubRepo ? (
+              <Badge variant="primary" className="max-w-full">
+                <Github className="size-3 shrink-0" />
+                <span className="truncate" dir="ltr">
+                  {project.repoOwner}/{project.repoName}
+                </span>
+              </Badge>
+            ) : connected ? (
               <Badge variant="success">
                 <GitBranch className="size-3" />
                 {t('common.repoConnected')}
@@ -131,6 +142,8 @@ export default function ProjectsPage() {
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [repoUrl, setRepoUrl] = React.useState('');
+  const [repoOwner, setRepoOwner] = React.useState('');
+  const [repoName, setRepoName] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
 
@@ -155,6 +168,8 @@ export default function ProjectsPage() {
     setName('');
     setDescription('');
     setRepoUrl('');
+    setRepoOwner('');
+    setRepoName('');
     setFormError(null);
   }
 
@@ -182,6 +197,8 @@ export default function ProjectsPage() {
         name: trimmedName,
         description: description.trim() || undefined,
         repoUrl: repoUrl.trim() || undefined,
+        repoOwner: repoOwner.trim() || undefined,
+        repoName: repoName.trim() || undefined,
       });
       // The API returns rows newest-first, so prepend to keep them in sync.
       setProjects((prev) => [created, ...prev]);
@@ -285,6 +302,41 @@ export default function ProjectsPage() {
                     disabled={submitting}
                   />
                   <p className="text-xs text-muted-foreground">{t('projects.form.repoHint')}</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="project-repo-owner"
+                      className="text-sm font-medium text-foreground"
+                    >
+                      {t('projects.repoOwner')}
+                    </label>
+                    <Input
+                      id="project-repo-owner"
+                      value={repoOwner}
+                      onChange={(event) => setRepoOwner(event.target.value)}
+                      placeholder={t('projects.repoOwnerPlaceholder')}
+                      maxLength={200}
+                      disabled={submitting}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="project-repo-name"
+                      className="text-sm font-medium text-foreground"
+                    >
+                      {t('projects.repoName')}
+                    </label>
+                    <Input
+                      id="project-repo-name"
+                      value={repoName}
+                      onChange={(event) => setRepoName(event.target.value)}
+                      placeholder={t('projects.repoNamePlaceholder')}
+                      maxLength={200}
+                      disabled={submitting}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-col-reverse items-stretch gap-2 pt-1 sm:flex-row sm:items-center sm:justify-end">

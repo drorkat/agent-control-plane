@@ -26,6 +26,7 @@ model Organization {
   approvals Approval[]
   auditLogs AuditLog[]
   providerCredentials ProviderCredential[]
+  githubConnections   GitHubConnection[]
 }
 
 model User {
@@ -49,6 +50,8 @@ model Project {
   name           String
   description    String?
   repoUrl        String?
+  repoOwner      String? // GitHub owner/org, e.g. "acme" — the code loop targets owner/name
+  repoName       String? // GitHub repo name, e.g. "web"
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -183,6 +186,27 @@ model ProviderCredential {
   organizationId String
   provider       String // anthropic | openai | ...
   label          String?
+  ciphertext     String
+  iv             String
+  authTag        String
+  last4          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// A GitHub connection (BYOK personal access token), managed through the UI and
+// encrypted at rest (AES-256-GCM). The plaintext token is never stored or
+// returned by the API. The agent code loop (branch -> commit -> pull request)
+// authenticates with the decrypted token only at execution time.
+model GitHubConnection {
+  id             String   @id @default(uuid())
+  organizationId String
+  accountLogin   String? // the GitHub login the token authenticated as (from /user)
+  scopes         String? // reported token scopes, if any (informational)
   ciphertext     String
   iv             String
   authTag        String

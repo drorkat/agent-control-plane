@@ -19,4 +19,16 @@ export class UpdateProjectDto {
   @IsString()
   @MaxLength(500)
   repoUrl?: string;
+
+  // GitHub target for the code loop, e.g. owner "acme" + name "web". Optional:
+  // a project without a repo simply cannot open pull requests.
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  repoOwner?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  repoName?: string;
 }
