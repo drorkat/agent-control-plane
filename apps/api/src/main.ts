@@ -3,6 +3,7 @@ import './load-env';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { assertSecureConfig } from './common/config';
 
@@ -11,6 +12,11 @@ async function bootstrap() {
   assertSecureConfig();
 
   const app = await NestFactory.create(AppModule);
+
+  // Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, etc.). This
+  // is a JSON API consumed same-origin, so helmet's defaults apply cleanly; the
+  // browser never renders HTML from here.
+  app.use(helmet());
 
   // The web app talks to the API same-origin (Next rewrites /api/* to the API),
   // so cross-origin CORS is not needed for normal operation. Only allow the

@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { ProjectsModule } from './projects/projects.module';
@@ -22,6 +24,11 @@ import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
+    // Global rate limit: 300 requests / 60s per client IP. Auth routes tighten
+    // this further (see AuthController's @Throttle). In-memory storage is per
+    // instance — a multi-instance deployment should back this with a shared
+    // store (e.g. Redis via @nestjs/throttler's storage adapter).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
     CommonModule,
     AuthModule,
@@ -43,5 +50,11 @@ import { HealthController } from './health/health.controller';
     SchedulesModule,
   ],
   controllers: [HealthController],
+  providers: [
+    // Apply the rate limiter globally. Registered here as an APP_GUARD; it runs
+    // alongside the Auth/Roles guards (AuthModule) and protects public routes
+    // like login/signup from brute force even before authentication.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

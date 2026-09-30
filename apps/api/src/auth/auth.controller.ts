@@ -8,11 +8,19 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { Public } from './public.decorator';
 import { AuthUser, CurrentUser } from './current-user.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
+
+/**
+ * Credential endpoints get a much tighter rate limit than the global one:
+ * 10 attempts per minute per IP, to blunt password brute-forcing and signup
+ * spam without inconveniencing a real person.
+ */
+const AUTH_THROTTLE = { default: { ttl: 60_000, limit: 10 } };
 
 /** Name of the httpOnly session cookie carrying the JWT. */
 const SESSION_COOKIE = 'acp_session';
@@ -27,6 +35,7 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @Post('signup')
   async signup(
     @Body() dto: CreateUserDto,
@@ -38,6 +47,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE)
   @Post('login')
   @HttpCode(200)
   async login(
