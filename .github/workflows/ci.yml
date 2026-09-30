@@ -51,3 +51,57 @@ jobs:
       # Run the API's unit-test suite (Jest + ts-jest).
       - name: Test (API)
         run: npm run test -w @acp/api
+
+  integration-test:
+    name: Integration (e2e) tests
+    runs-on: ubuntu-latest
+
+    # A throwaway Postgres for the e2e suite, which drives the real Nest app
+    # against a real database (guards, validation, tenant context, run engine).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: acp
+          POSTGRES_PASSWORD: acp
+          POSTGRES_DB: acp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://acp:acp@localhost:5432/acp_test?schema=public
+      # Strong, non-placeholder secrets so the app boots under assertSecureConfig.
+      AUTH_SECRET: ci-e2e-auth-secret-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      ENCRYPTION_KEY: ci-e2e-encryption-key-bbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      # Exercise the full loop offline — no real provider key or GitHub token.
+      AI_MOCK: '1'
+      GITHUB_MOCK: '1'
+      WEBHOOK_ALLOW_PRIVATE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      # Create the schema in the throwaway database before the suite runs.
+      - name: Push database schema
+        run: npx prisma db push --schema apps/api/prisma/schema.prisma
+
+      - name: Test (API e2e)
+        run: npm run test:e2e -w @acp/api
