@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
 import { encryptSecret, last4 } from '../common/crypto';
@@ -61,7 +65,21 @@ export class ProvidersService {
    * AES-256-GCM (see `common/crypto`) before it is written, and only the safe
    * view is returned — the key is never stored in the clear or echoed back.
    */
-  create(dto: CreateProviderDto): Promise<ProviderCredentialView> {
+  async create(dto: CreateProviderDto): Promise<ProviderCredentialView> {
+    // One credential per provider per org (matching how GitHub enforces a single
+    // connection). Storing two keys for the same provider is ambiguous — the run
+    // engine would have to guess which to use — so refuse it. Replace by deleting
+    // the existing one first.
+    const existing = await this.prisma.providerCredential.findFirst({
+      where: { organizationId: currentOrgId(), provider: dto.provider },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        `A credential for "${dto.provider}" already exists. Delete it before adding a new one.`,
+      );
+    }
+
     const { ciphertext, iv, authTag } = encryptSecret(dto.apiKey);
 
     return this.prisma.providerCredential.create({

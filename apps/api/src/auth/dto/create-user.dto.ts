@@ -11,9 +11,12 @@ export class CreateUserDto {
   @IsEmail()
   email!: string;
 
+  // Capped at 72: bcrypt silently ignores anything past 72 bytes, so allowing a
+  // longer password would mean the extra characters never actually protect the
+  // account. Bounding it here keeps "what you typed" == "what secures you".
   @IsString()
   @MinLength(8)
-  @MaxLength(200)
+  @MaxLength(72)
   password!: string;
 
   @IsOptional()

@@ -29,10 +29,11 @@ export class CreateMemberDto {
   @MaxLength(200)
   name?: string;
 
-  /** Initial password. Hashed at rest; never returned. */
+  /** Initial password. Hashed at rest; never returned. Capped at 72 — bcrypt
+   * ignores bytes past 72, so a longer value would not fully protect the account. */
   @IsString()
   @MinLength(8)
-  @MaxLength(200)
+  @MaxLength(72)
   password!: string;
 
   /** Role to grant. `owner` is not assignable via this endpoint. */

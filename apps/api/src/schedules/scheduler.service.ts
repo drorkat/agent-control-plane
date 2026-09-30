@@ -52,10 +52,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * One scheduler pass: load due, active schedules across ALL orgs and, for each,
-   * start a run inside that schedule's tenant context, then advance its
-   * `lastRunAt`/`nextRunAt` regardless of the run's outcome. Each schedule is
-   * isolated in its own try/catch so one bad row never aborts the pass, and the
-   * `running` guard makes passes non-overlapping. This method never throws.
+   * atomically CLAIM it (advance `lastRunAt`/`nextRunAt` only if the row still
+   * holds the `nextRunAt` we read) before starting a run inside that schedule's
+   * tenant context. The claim is what makes this safe for multiple API instances:
+   * only one instance's conditional update matches per due window, so a schedule
+   * fires exactly once even with N schedulers running — no lock table or external
+   * lease needed. Each schedule is isolated in its own try/catch so one bad row
+   * never aborts the pass, and the `running` guard keeps passes within this
+   * instance non-overlapping. This method never throws.
    */
   private async tick(): Promise<void> {
     if (this.running) return;
@@ -74,6 +78,29 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         // ambient context inside this loop.
         const { organizationId, intervalMinutes } = schedule;
         try {
+          // Atomically claim the schedule: advance it only if its nextRunAt is
+          // still exactly what we read. Across instances (or overlapping ticks)
+          // only the first update matches — everyone else sees an already-moved
+          // nextRunAt and updates zero rows, so the run below fires once. We
+          // advance BEFORE running so a long run can't be re-claimed mid-flight;
+          // the schedule retries on its next interval regardless of outcome.
+          const now = new Date();
+          const claim = await this.prisma.schedule.updateMany({
+            where: {
+              id: schedule.id,
+              active: true,
+              nextRunAt: schedule.nextRunAt,
+            },
+            data: {
+              lastRunAt: now,
+              nextRunAt: new Date(now.getTime() + intervalMinutes * 60_000),
+            },
+          });
+          if (claim.count === 0) {
+            // Another instance/tick already claimed this due window.
+            continue;
+          }
+
           await tenantStorage.run({ organizationId }, async () => {
             try {
               await this.runs.start(
@@ -84,23 +111,12 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
               // A run that actually started records its own failure on the run.
               // But some failures (e.g. the task's agent was later unassigned)
               // reject inside runs.start() BEFORE any Run row exists, which would
-              // otherwise be an invisible no-op — so log the reason here. The
-              // schedule still advances below and retries next interval.
+              // otherwise be an invisible no-op — so log the reason here.
               const message = err instanceof Error ? err.message : String(err);
               this.logger.warn(
                 `Scheduled run for schedule "${schedule.id}" did not start: ${message}`,
               );
             }
-          });
-
-          // Advance the schedule regardless of the run's outcome.
-          const now = new Date();
-          await this.prisma.schedule.update({
-            where: { id: schedule.id },
-            data: {
-              lastRunAt: now,
-              nextRunAt: new Date(now.getTime() + intervalMinutes * 60_000),
-            },
           });
         } catch (err) {
           // One bad schedule must never break the tick. Log the message only —
