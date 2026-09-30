@@ -13,7 +13,8 @@ import { AuditService } from '../audit/audit.service';
 import { GitHubClientFactory } from '../github/github-client.factory';
 import { OpenPrFile, OpenPrInput } from '../github/github-client.interface';
 import { RepoContextService } from './repo-context.service';
-import { buildAgentSystemPrompt, parseChangeProposal } from './change-proposal';
+import { ChangeProposal } from './change-proposal';
+import { buildAgentLoopSystemPrompt, runAgentLoop } from './agent-loop';
 import {
   WebhookDispatcher,
   WebhookEvent,
@@ -108,76 +109,105 @@ export class RunsService {
     const taskText =
       task.title + (task.description ? '\n\n' + task.description : '');
 
-    // If the task's project is linked to a GitHub repo, read real code as
-    // context so the agent proposes actual file edits (not just a plan). When
-    // there is no repo (or GitHub can't be reached) we fall back to plain
-    // context-free planning and the old proposal-document PR path.
+    // If the task's project is linked to a GitHub repo, the agent reads real
+    // code and works in multiple tool steps (list files, read files) before
+    // proposing actual file edits. Without a repo it falls back to a single
+    // context-free planning call and the proposal-document PR path.
     const project = await this.prisma.project.findFirst({
       where: { id: task.projectId, organizationId: currentOrgId() },
       select: { repoOwner: true, repoName: true },
     });
 
-    let system = baseInstructions;
-    let prompt = taskText;
-    let hasRepoContext = false;
-    if (project?.repoOwner && project?.repoName) {
-      const context = await this.repoContext.gather(
-        project.repoOwner,
-        project.repoName,
-        taskText,
-      );
-      if (context) {
-        hasRepoContext = true;
-        system = buildAgentSystemPrompt(baseInstructions);
-        prompt = `${taskText}\n\n${context.promptSection}`;
-        await this.addEvent(run.id, 'CONTEXT_READ', {
-          filesRead: context.files.length,
-          totalFiles: context.allPaths.length,
-        });
-      }
-    }
-
     try {
       // The decrypted key lives only inside the provider instance returned here;
       // it is never surfaced back to this service.
       const provider = await this.factory.forAgent(agent);
-      const res = await provider.complete({ system, prompt, model: agent.model });
 
-      await this.addEvent(run.id, 'MODEL_RESPONSE', { text: res.text });
+      let modelText = '';
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let proposal: ChangeProposal | null = null;
+      let beforeByPath = new Map<string, string>();
 
-      // Persist token usage / cost now. Whether the run then completes, pauses
-      // for approval, or is blocked is decided by the gateway below — the tokens
-      // stay written across all of those outcomes.
-      const cost = computeCostUsd(
-        agent.model,
-        res.inputTokens,
-        res.outputTokens,
-      );
+      const client =
+        project?.repoOwner && project?.repoName
+          ? await this.github.forCurrentOrg()
+          : null;
+      const context =
+        client && project?.repoOwner && project?.repoName
+          ? await this.repoContext.gather(
+              project.repoOwner,
+              project.repoName,
+              taskText,
+            )
+          : null;
+
+      if (client && context && project?.repoOwner && project?.repoName) {
+        // Multi-step agent loop over the connected repository.
+        await this.addEvent(run.id, 'CONTEXT_READ', {
+          filesRead: context.files.length,
+          totalFiles: context.allPaths.length,
+        });
+        const loop = await runAgentLoop({
+          provider,
+          client,
+          owner: project.repoOwner,
+          repo: project.repoName,
+          model: agent.model,
+          system: buildAgentLoopSystemPrompt(baseInstructions),
+          taskText,
+          contextSection: context.promptSection,
+          allPaths: context.allPaths,
+          seedFiles: new Map(context.files.map((f) => [f.path, f.content])),
+          onEvent: async (type, payload) => {
+            await this.addEvent(run.id, type, payload as Prisma.InputJsonObject);
+          },
+        });
+        modelText = loop.finalText;
+        inputTokens = loop.inputTokens;
+        outputTokens = loop.outputTokens;
+        proposal = loop.proposal;
+        beforeByPath = loop.readFiles;
+      } else {
+        // No repo: a single context-free planning call.
+        const res = await provider.complete({
+          system: baseInstructions,
+          prompt: taskText,
+          model: agent.model,
+        });
+        modelText = res.text;
+        inputTokens = res.inputTokens;
+        outputTokens = res.outputTokens;
+      }
+
+      await this.addEvent(run.id, 'MODEL_RESPONSE', { text: modelText });
+
+      // Persist token usage / cost now. The outcome (complete / approval /
+      // blocked) is decided by the gateway below — the tokens stay written
+      // across all of those outcomes.
+      const cost = computeCostUsd(agent.model, inputTokens, outputTokens);
       await this.prisma.run.update({
         where: { id: run.id },
-        data: {
-          inputTokens: res.inputTokens,
-          outputTokens: res.outputTokens,
-          costUsd: cost,
-        },
+        data: { inputTokens, outputTokens, costUsd: cost },
       });
 
-      // When the agent had repo context, try to parse structured file edits from
-      // its response and record them, so the approved PR commits the real
-      // changes rather than a proposal document.
-      if (hasRepoContext) {
-        const proposal = parseChangeProposal(res.text);
-        if (proposal && proposal.files.length > 0) {
-          const changes: Prisma.InputJsonObject = {
-            summary: proposal.summary,
-            fileCount: proposal.files.length,
-            files: proposal.files.map((f) => ({
+      // Record the agent's structured edits, including the ORIGINAL content of
+      // each touched file when the agent read it, so the run detail can show a
+      // real before/after diff and the approved PR commits the real changes.
+      if (proposal && proposal.files.length > 0) {
+        const changes: Prisma.InputJsonObject = {
+          summary: proposal.summary,
+          fileCount: proposal.files.length,
+          files: proposal.files.map((f) => {
+            const previous = beforeByPath.get(f.path);
+            return {
               path: f.path,
               content: f.content,
-            })),
-          };
-          await this.addEvent(run.id, 'CHANGES_PROPOSED', changes);
-        }
+              ...(previous !== undefined ? { previousContent: previous } : {}),
+            };
+          }),
+        };
+        await this.addEvent(run.id, 'CHANGES_PROPOSED', changes);
       }
 
       // Route a representative proposed action through the Tool Gateway.

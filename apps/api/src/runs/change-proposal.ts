@@ -104,7 +104,7 @@ export function buildAgentSystemPrompt(baseInstructions: string): string {
  * we then take the substring from the first `{` to the last `}` and parse it.
  * Returns the parsed value, or `null` when nothing parses.
  */
-function extractJsonObject(text: string): unknown {
+export function extractJsonObject(text: string): unknown {
   let cleaned = text.trim();
 
   // If the whole reply is a single fenced block, unwrap it. The lazy body plus

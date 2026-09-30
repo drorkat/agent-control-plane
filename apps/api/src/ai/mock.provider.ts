@@ -5,40 +5,39 @@ import {
 } from './provider.interface';
 
 // Marker the RepoContextService writes before each file it includes in the
-// prompt. Its presence tells this mock the run wants structured file edits (a
-// ChangeProposal), not a free-text plan; its exact text is a shared contract.
+// prompt. The mock parses it to find a file to edit / read.
 const REPO_FILE_MARKER = '### File: ';
 
 /**
  * A network-free provider used for local development and tests (enabled via
- * AI_MOCK=1). Without repository context it returns a short, plausible "plan".
- * When the prompt carries repository context (the {@link REPO_FILE_MARKER}), it
- * instead returns a valid ChangeProposal JSON that appends a small marker line
- * to the first file in that context — enough to exercise the real file-edit
- * loop end to end. Token usage is fake but deterministic.
+ * AI_MOCK=1).
+ *
+ * Three behaviors, chosen from the prompt:
+ *  - No repo context → a short, plausible free-text "plan".
+ *  - Agent loop mode (the loop system prompt mentions `propose_changes`) → ONE
+ *    JSON action per step, walking list_files → read_file → propose_changes so
+ *    the multi-step loop is exercised end to end.
+ * Token usage is fake but deterministic.
  */
 export class MockProvider implements AIProvider {
   readonly name = 'mock';
 
   async complete(input: AICompletionInput): Promise<AICompletionResult> {
-    const { prompt } = input;
+    const loopMode = (input.system ?? '').includes('propose_changes');
+    const text = loopMode
+      ? buildLoopAction(input.prompt)
+      : buildPlanResponse(input.prompt);
 
-    const text = prompt.includes(REPO_FILE_MARKER)
-      ? buildProposalResponse(prompt)
-      : buildPlanResponse(prompt);
-
-    // Fake usage: roughly 4 characters per token, as specified.
-    const inputTokens = Math.ceil(prompt.length / 4);
+    // Fake usage: roughly 4 characters per token.
+    const inputTokens = Math.ceil((input.prompt.length + (input.system?.length ?? 0)) / 4);
     const outputTokens = Math.ceil(text.length / 4);
 
     return { text, inputTokens, outputTokens };
   }
 }
 
-/** The original behavior: a short numbered plan that references the task. */
+/** The context-free behavior: a short numbered plan that references the task. */
 function buildPlanResponse(prompt: string): string {
-  // Use the first non-empty line of the prompt (typically the task title) so
-  // the generated plan clearly references what was asked.
   const topic =
     prompt
       .split('\n')
@@ -57,29 +56,85 @@ function buildPlanResponse(prompt: string): string {
 }
 
 /**
- * A structured ChangeProposal (as JSON text) that edits the first file found in
- * the repo context, by appending a small marker line appropriate to its type.
- * If the marker is present but the block cannot be parsed, we fall back to a
- * plan so the mock never throws.
+ * The agent-loop behavior: return ONE JSON action for the current step. The
+ * step number is read from the prompt's "## Progress so far" section, so the
+ * mock walks a deterministic sequence: list_files → read_file → propose_changes.
  */
-function buildProposalResponse(prompt: string): string {
-  const target = firstMarkedFile(prompt);
-  if (!target) {
-    return buildPlanResponse(prompt);
+function buildLoopAction(prompt: string): string {
+  const done = countProgressSteps(prompt);
+
+  // Step 1: survey the repository.
+  if (done <= 0) {
+    return JSON.stringify({ tool: 'list_files' });
   }
 
-  const newContent = target.content + trailerFor(target.path);
+  // Step 2: read one source file (demonstrates pulling in a file on demand).
+  if (done === 1) {
+    const path = pickReadPath(prompt);
+    if (path) {
+      return JSON.stringify({ tool: 'read_file', path });
+    }
+  }
+
+  // Final step: propose editing the first context file, appending a marker line.
+  const target = firstMarkedFile(prompt);
+  if (!target) {
+    return JSON.stringify({
+      tool: 'propose_changes',
+      summary: 'Add an Agent Control Plane note',
+      files: [
+        {
+          path: 'acp/NOTES.md',
+          content: '# Notes\n\nUpdated by an Agent Control Plane agent (mock).\n',
+        },
+      ],
+    });
+  }
   return JSON.stringify({
+    tool: 'propose_changes',
     summary: `Apply the requested change to ${target.path}`,
-    files: [{ path: target.path, content: newContent }],
+    files: [{ path: target.path, content: target.content + trailerFor(target.path) }],
   });
+}
+
+/** Count the numbered step lines in the prompt's "## Progress so far" section. */
+function countProgressSteps(prompt: string): number {
+  const start = prompt.indexOf('## Progress so far');
+  if (start === -1) {
+    return 0;
+  }
+  let section = prompt.slice(start);
+  const end = section.indexOf('## Your next action');
+  if (end !== -1) {
+    section = section.slice(0, end);
+  }
+  const matches = section.match(/^\s*\d+\.\s/gm);
+  return matches ? matches.length : 0;
+}
+
+/** Pick a file path to read from the prompt's "Files:" listing (prefer nested). */
+function pickReadPath(prompt: string): string | null {
+  const filesIdx = prompt.indexOf('\nFiles:');
+  const region = filesIdx === -1 ? prompt : prompt.slice(filesIdx + 1);
+  const entries: string[] = [];
+  for (const line of region.split('\n')) {
+    if (line.startsWith('### File:') || line.startsWith('## ')) {
+      break; // reached the file blocks / next section — stop scanning the list
+    }
+    const m = line.match(/^-\s+(.+)$/);
+    if (m) {
+      entries.push(m[1].trim());
+    }
+  }
+  if (entries.length === 0) {
+    return null;
+  }
+  return entries.find((p) => p.includes('/')) ?? entries[0];
 }
 
 /**
  * Extract the first `### File: <path>` entry from the prompt and the content of
- * the fenced code block that follows it. Returns `null` if no complete entry is
- * found. The single trailing newline the context builder adds before the
- * closing fence is stripped, so the content matches the original file.
+ * the fenced code block that follows it. Returns null if none is found.
  */
 function firstMarkedFile(
   prompt: string,
@@ -89,7 +144,6 @@ function firstMarkedFile(
     return null;
   }
 
-  // The path is the remainder of the marker line.
   const pathStart = markerIndex + REPO_FILE_MARKER.length;
   const lineEnd = prompt.indexOf('\n', pathStart);
   const path = (
@@ -99,7 +153,6 @@ function firstMarkedFile(
     return null;
   }
 
-  // The content is the first fenced code block after the marker line.
   const fenceOpen = prompt.indexOf('```', lineEnd + 1);
   if (fenceOpen === -1) {
     return null;
@@ -133,6 +186,5 @@ function trailerFor(path: string): string {
   if (CODE_EXT.test(path)) {
     return '\n// Updated by an Agent Control Plane agent (mock)\n';
   }
-  // Default: append a blank line.
   return '\n';
 }
