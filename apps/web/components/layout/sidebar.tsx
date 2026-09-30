@@ -11,6 +11,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 import { usePendingApprovals } from '@/lib/approvals/context';
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
   { labelKey: 'nav.runs', href: '/runs', icon: Activity },
   { labelKey: 'nav.approvals', href: '/approvals', icon: ShieldCheck },
   { labelKey: 'nav.audit', href: '/audit', icon: ScrollText },
+  { labelKey: 'nav.team', href: '/team', icon: Users },
   { labelKey: 'nav.settings', href: '/settings', icon: Settings },
 ];
 

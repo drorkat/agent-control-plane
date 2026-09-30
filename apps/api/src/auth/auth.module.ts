@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthMiddleware } from './auth.middleware';
 import { AuthGuard } from './auth.guard';
+import { RolesGuard } from './roles.guard';
 
 // PrismaService is provided by the @Global() PrismaModule, so it does not need
 // to be imported here. The manager registers this module in app.module.ts.
@@ -19,7 +20,10 @@ import { AuthGuard } from './auth.guard';
   providers: [
     AuthService,
     AuthMiddleware,
+    // APP_GUARDs run in registration order, so authentication (AuthGuard) runs
+    // before authorization (RolesGuard).
     { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
   exports: [AuthService],
 })

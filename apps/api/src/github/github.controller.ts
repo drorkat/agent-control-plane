@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { GitHubService } from './github.service';
 import { ConnectGithubDto } from './dto/connect-github.dto';
+import { Roles } from '../auth/roles.decorator';
 
 // Global prefix `api` is applied in main.ts, so these routes live at
 // /api/github. There is intentionally no endpoint that returns the token — the
@@ -23,12 +24,14 @@ export class GitHubController {
   }
 
   @Post('connection')
+  @Roles('owner', 'admin')
   connect(@Body() dto: ConnectGithubDto) {
     return this.github.connect(dto);
   }
 
   @Delete('connection/:id')
   @HttpCode(204)
+  @Roles('owner', 'admin')
   disconnect(@Param('id') id: string): Promise<void> {
     return this.github.disconnect(id);
   }

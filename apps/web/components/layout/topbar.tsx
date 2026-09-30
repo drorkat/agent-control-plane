@@ -1,9 +1,29 @@
 'use client';
 
 import * as React from 'react';
-import { Bell, ChevronDown, LogOut, Menu, Search } from 'lucide-react';
+import {
+  Bell,
+  CheckCheck,
+  ChevronDown,
+  Inbox,
+  Loader2,
+  LogOut,
+  Menu,
+  RotateCcw,
+  Search,
+  TriangleAlert,
+} from 'lucide-react';
+// Reuse the app's existing locale-aware relative-time formatter.
+import { formatRelativeTime } from '@/app/approvals/types';
 import { useAuth, type AuthUser } from '@/lib/auth/context';
 import { useI18n, type Lang } from '@/lib/i18n/context';
+import {
+  getUnreadCount,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type AppNotification,
+} from '@/lib/notifications';
 import { cn } from '@/lib/utils';
 import { Logo } from './logo';
 import { ThemeToggle } from './theme-toggle';
@@ -150,6 +170,236 @@ function LanguageToggle() {
   );
 }
 
+/**
+ * The notifications bell: an unread-count badge, and a popover panel listing
+ * recent notifications with a "mark all read" action. Closes on outside-click
+ * and Escape; the panel is anchored to the inline-end edge (RTL-correct).
+ */
+function NotificationsMenu() {
+  const { t, lang } = useI18n();
+  const [open, setOpen] = React.useState(false);
+  const [count, setCount] = React.useState(0);
+  const [items, setItems] = React.useState<AppNotification[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [markingAll, setMarkingAll] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // Best-effort unread count; keep the last known value on failure.
+  const refreshCount = React.useCallback(async () => {
+    try {
+      setCount(await getUnreadCount());
+    } catch {
+      /* leave the last known count in place */
+    }
+  }, []);
+
+  const loadList = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setItems(await listNotifications());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('notifications.loadError'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  // Poll the unread count on mount and every 30s (cleaned up on unmount).
+  React.useEffect(() => {
+    void refreshCount();
+    const id = window.setInterval(() => void refreshCount(), 30_000);
+    return () => window.clearInterval(id);
+  }, [refreshCount]);
+
+  // While open: (re)load the list, refresh the count, and wire up dismissal.
+  React.useEffect(() => {
+    if (!open) return;
+    void loadList();
+    void refreshCount();
+    function onPointerDown(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, loadList, refreshCount]);
+
+  async function handleMarkAll() {
+    setMarkingAll(true);
+    try {
+      await markAllNotificationsRead();
+      await Promise.all([loadList(), refreshCount()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('notifications.loadError'));
+    } finally {
+      setMarkingAll(false);
+    }
+  }
+
+  function handleItemClick(n: AppNotification) {
+    if (n.read) return;
+    // Optimistically mark read locally; the server call is best-effort.
+    setItems((prev) => prev.map((it) => (it.id === n.id ? { ...it, read: true } : it)));
+    setCount((c) => Math.max(0, c - 1));
+    void markNotificationRead(n.id).catch(() => {
+      /* best-effort — a failed read stays reflected only until the next reload */
+    });
+  }
+
+  const hasUnread = count > 0;
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={t('notifications.aria')}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className={cn(iconButton, 'relative')}
+      >
+        <Bell className="size-[18px]" />
+        {hasUnread && (
+          <span className="absolute -end-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground ring-2 ring-background">
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label={t('notifications.title')}
+          className="absolute end-0 top-full z-40 mt-2 w-80 origin-top overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg animate-fade-in sm:w-96"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">{t('notifications.title')}</p>
+              {hasUnread && (
+                <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  {t('notifications.unread', { count })}
+                </span>
+              )}
+            </div>
+            {hasUnread && (
+              <button
+                type="button"
+                onClick={handleMarkAll}
+                disabled={markingAll}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {markingAll ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <CheckCheck className="size-3.5" />
+                )}
+                {t('notifications.markAllRead')}
+              </button>
+            )}
+          </div>
+
+          {/* Body */}
+          <div className="max-h-96 overflow-y-auto">
+            {loading ? (
+              <NotificationsSkeleton />
+            ) : error ? (
+              <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                <span className="grid size-10 place-items-center rounded-full bg-danger/10 text-danger">
+                  <TriangleAlert className="size-5" />
+                </span>
+                <p className="text-sm text-muted-foreground">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadList()}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <RotateCcw className="size-3.5" />
+                  {t('common.tryAgain')}
+                </button>
+              </div>
+            ) : items.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                <span className="grid size-10 place-items-center rounded-full bg-muted text-muted-foreground">
+                  <Inbox className="size-5" />
+                </span>
+                <p className="text-sm text-muted-foreground">{t('notifications.empty')}</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {items.map((n) => (
+                  <li key={n.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleItemClick(n)}
+                      className={cn(
+                        'flex w-full items-start gap-2.5 px-3 py-2.5 text-start transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+                        !n.read && 'bg-primary/[0.04]',
+                      )}
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'mt-1.5 size-2 shrink-0 rounded-full',
+                          n.read ? 'bg-transparent' : 'bg-primary',
+                        )}
+                      />
+                      <span className="min-w-0 flex-1 space-y-0.5">
+                        <span
+                          className={cn(
+                            'block truncate text-sm',
+                            n.read ? 'font-medium text-foreground/80' : 'font-semibold text-foreground',
+                          )}
+                        >
+                          {n.title}
+                        </span>
+                        {n.body && (
+                          <span className="block line-clamp-2 text-xs text-muted-foreground" dir="auto">
+                            {n.body}
+                          </span>
+                        )}
+                        <span className="block text-[11px] text-muted-foreground">
+                          {formatRelativeTime(n.createdAt, lang)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationsSkeleton() {
+  return (
+    <div className="divide-y divide-border">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex items-start gap-2.5 px-3 py-2.5">
+          <div className="mt-1.5 size-2 shrink-0 animate-pulse rounded-full bg-muted" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3.5 w-40 max-w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -193,10 +443,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         <LanguageToggle />
         <ThemeToggle />
 
-        <button type="button" aria-label={t('topbar.notifications')} className={cn(iconButton, 'relative')}>
-          <Bell className="size-[18px]" />
-          <span className="absolute end-2 top-2 size-1.5 rounded-full bg-primary ring-2 ring-background" />
-        </button>
+        <NotificationsMenu />
 
         {/* Real user menu (only when signed in) */}
         {user && <UserMenu user={user} />}

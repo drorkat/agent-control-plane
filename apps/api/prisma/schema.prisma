@@ -27,6 +27,8 @@ model Organization {
   auditLogs AuditLog[]
   providerCredentials ProviderCredential[]
   githubConnections   GitHubConnection[]
+  webhooks            Webhook[]
+  notifications       Notification[]
 }
 
 model User {
@@ -196,6 +198,61 @@ model ProviderCredential {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId])
+}
+
+// An outbound webhook endpoint. When a subscribed event fires, the platform
+// POSTs a signed JSON payload (HMAC-SHA256 over the body, using `secret`) to
+// `url`. The secret is shown to the operator once at creation so they can verify
+// signatures on their side; the server keeps it to sign deliveries.
+model Webhook {
+  id              String    @id @default(uuid())
+  organizationId  String
+  url             String
+  secret          String
+  events          String[] // e.g. ["approval.requested","run.completed","pull_request.opened"]
+  active          Boolean   @default(true)
+  lastStatus      String? // success | failed — the outcome of the most recent delivery
+  lastDeliveredAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId])
+}
+
+// One delivery attempt of a webhook, kept as a short audit trail for the UI.
+model WebhookDelivery {
+  id         String   @id @default(uuid())
+  webhookId  String
+  event      String
+  status     String // success | failed
+  statusCode Int?
+  error      String?
+  createdAt  DateTime @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+}
+
+// An in-app notification shown in the topbar bell. `userId` null means the
+// notification is for the whole organization.
+model Notification {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String? // null = org-wide
+  type           String // approval.requested | run.completed | run.failed | pull_request.opened
+  title          String
+  body           String?
+  read           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([read])
 }
 
 // A GitHub connection (BYOK personal access token), managed through the UI and

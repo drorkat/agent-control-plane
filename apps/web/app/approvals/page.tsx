@@ -29,6 +29,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { usePendingApprovals } from '@/lib/approvals/context';
+import { useAuth } from '@/lib/auth/context';
+import { canManage } from '@/lib/auth/roles';
 import { useI18n } from '@/lib/i18n/context';
 import type { TranslateFn } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
@@ -65,6 +67,10 @@ function riskIcon(level: string): LucideIcon {
 
 export default function ApprovalsPage() {
   const { t, lang } = useI18n();
+  const { user } = useAuth();
+  // Only owners/admins may resolve approvals (the API enforces this too);
+  // non-managers get a read-only view of the same cards.
+  const isManager = canManage(user?.role);
   const { refresh: refreshPendingBadge } = usePendingApprovals();
   const [approvals, setApprovals] = React.useState<Approval[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -153,6 +159,7 @@ export default function ApprovalsPage() {
                       key={approval.id}
                       approval={approval}
                       onResolved={handleResolved}
+                      isManager={isManager}
                       t={t}
                       lang={lang}
                     />
@@ -247,11 +254,13 @@ function RunReference({
 function PendingCard({
   approval,
   onResolved,
+  isManager,
   t,
   lang,
 }: {
   approval: Approval;
   onResolved: () => Promise<void>;
+  isManager: boolean;
   t: TranslateFn;
   lang: string;
 }) {
@@ -336,8 +345,13 @@ function PendingCard({
             </p>
           )}
 
-          {/* Decision controls */}
-          {rejecting ? (
+          {/* Decision controls — only owners/admins may resolve approvals */}
+          {!isManager ? (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-3 text-center text-sm text-muted-foreground">
+              <ShieldCheck className="size-4 shrink-0" />
+              {t('approvals.managersOnly')}
+            </div>
+          ) : rejecting ? (
             <div className="space-y-2.5 rounded-lg border border-danger/30 bg-danger/5 p-3">
               <label htmlFor={`reason-${approval.id}`} className="block text-sm font-medium text-foreground">
                 {t('approvals.reasonLabel')}

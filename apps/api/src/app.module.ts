@@ -13,6 +13,9 @@ import { ApprovalsModule } from './approvals/approvals.module';
 import { AuthModule } from './auth/auth.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { GitHubModule } from './github/github.module';
+import { MembersModule } from './members/members.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -31,6 +34,9 @@ import { HealthController } from './health/health.controller';
     RunsModule,
     ApprovalsModule,
     DashboardModule,
+    MembersModule,
+    WebhooksModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
 })

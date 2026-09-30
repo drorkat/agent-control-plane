@@ -3,6 +3,8 @@ import {
   OpenPrFile,
   OpenPrInput,
   OpenPrResult,
+  RepoFileContent,
+  RepoFileRef,
   VerifyResult,
 } from './github-client.interface';
 
@@ -75,6 +77,79 @@ export class RealGitHubClient implements GitHubClient {
       branch,
       number: pr.number,
     };
+  }
+
+  /**
+   * List every file (and directory) in the repo tree, recursively. The ref is
+   * the caller's, or the repo's default branch. GitHub caps very large trees and
+   * flags them with `truncated`; we simply use whatever came back in that case.
+   */
+  async listFiles(
+    owner: string,
+    repo: string,
+    ref?: string,
+  ): Promise<RepoFileRef[]> {
+    const resolvedRef = ref ?? (await this.getDefaultBranch(owner, repo));
+    const res = await this.request(
+      'GET',
+      `/repos/${owner}/${repo}/git/trees/${encodePath(resolvedRef)}?recursive=1`,
+    );
+    if (!res.ok) {
+      throw await this.githubError(res, 'Failed to list repository files');
+    }
+    const body = (await res.json()) as {
+      tree?: Array<{ path?: string; type?: string }>;
+      truncated?: boolean;
+    };
+    const refs: RepoFileRef[] = [];
+    for (const entry of body.tree ?? []) {
+      if (!entry.path) {
+        continue;
+      }
+      // Keep only files (blobs) and directories (trees); skip anything else,
+      // such as `commit` entries for submodules.
+      if (entry.type === 'blob') {
+        refs.push({ path: entry.path, type: 'file' });
+      } else if (entry.type === 'tree') {
+        refs.push({ path: entry.path, type: 'dir' });
+      }
+    }
+    return refs;
+  }
+
+  /**
+   * Read one file's decoded UTF-8 content and its blob sha. A 404 means the file
+   * does not exist at this ref, which is a normal outcome, so we return `null`
+   * rather than throwing. A directory path (GitHub returns an array) also yields
+   * `null`. Any other non-2xx is a real error and throws via `githubError`.
+   */
+  async getFile(
+    owner: string,
+    repo: string,
+    path: string,
+    ref?: string,
+  ): Promise<RepoFileContent | null> {
+    const query = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+    const res = await this.request(
+      'GET',
+      `/repos/${owner}/${repo}/contents/${encodePath(path)}${query}`,
+    );
+    if (res.status === 404) {
+      return null;
+    }
+    if (!res.ok) {
+      throw await this.githubError(res, `Failed to read "${path}"`);
+    }
+    const body = (await res.json()) as
+      | { content?: string; encoding?: string; sha?: string }
+      | unknown[];
+    // A directory listing comes back as an array — not a file we can read.
+    if (Array.isArray(body)) {
+      return null;
+    }
+    const encoding = (body.encoding || 'base64') as BufferEncoding;
+    const content = Buffer.from(body.content ?? '', encoding).toString('utf8');
+    return { path, content, sha: body.sha ?? '' };
   }
 
   /** GET the repo and read its default branch. */

@@ -30,7 +30,29 @@ export interface OpenPrResult {
   number?: number;
 }
 
+/** A single entry in a repo's file tree. */
+export interface RepoFileRef {
+  path: string;
+  type: 'file' | 'dir';
+}
+
+/** One file's decoded UTF-8 content, with the blob sha it was read at. */
+export interface RepoFileContent {
+  path: string;
+  content: string;
+  sha: string;
+}
+
 export interface GitHubClient {
   verifyToken(): Promise<VerifyResult>;
   openPullRequest(input: OpenPrInput): Promise<OpenPrResult>;
+  /** List file paths in the repo (recursive), for the given ref or default branch. */
+  listFiles(owner: string, repo: string, ref?: string): Promise<RepoFileRef[]>;
+  /** Read one file's decoded UTF-8 content (+ blob sha), or null if it doesn't exist. */
+  getFile(
+    owner: string,
+    repo: string,
+    path: string,
+    ref?: string,
+  ): Promise<RepoFileContent | null>;
 }

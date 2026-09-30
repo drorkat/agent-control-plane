@@ -44,6 +44,8 @@ export type RunEventType =
   | 'APPROVAL_REJECTED'
   | 'TOOL_BLOCKED'
   | 'TOOL_EXECUTED'
+  | 'CONTEXT_READ'
+  | 'CHANGES_PROPOSED'
   | 'RUN_COMPLETED'
   | 'RUN_FAILED';
 
@@ -93,6 +95,8 @@ const EVENT_LABEL_KEYS: Record<RunEventType, TranslationKey> = {
   APPROVAL_REJECTED: 'runs.event.APPROVAL_REJECTED',
   TOOL_BLOCKED: 'runs.event.TOOL_BLOCKED',
   TOOL_EXECUTED: 'runs.event.TOOL_EXECUTED',
+  CONTEXT_READ: 'runs.event.CONTEXT_READ',
+  CHANGES_PROPOSED: 'runs.event.CHANGES_PROPOSED',
   RUN_COMPLETED: 'runs.event.RUN_COMPLETED',
   RUN_FAILED: 'runs.event.RUN_FAILED',
 };
@@ -116,9 +120,11 @@ export function runEventTone(type: string): 'neutral' | 'primary' | 'success' | 
     case 'MODEL_RESPONSE':
     case 'APPROVAL_RECEIVED':
     case 'TOOL_EXECUTED':
+    case 'CHANGES_PROPOSED':
       return 'primary';
     case 'RUN_CREATED':
     case 'APPROVAL_REQUESTED':
+    case 'CONTEXT_READ':
     default:
       return 'neutral';
   }
@@ -135,6 +141,66 @@ export function pullRequestUrlFromEvent(event: RunEvent): string | null {
     if (typeof url === 'string' && url.trim()) return url;
   }
   return null;
+}
+
+/**
+ * The repository-context read recorded by a `CONTEXT_READ` event, parsed
+ * defensively from its payload. Returns null for other event types or when the
+ * expected `filesRead` count is missing. `totalFiles` falls back to `filesRead`.
+ */
+export function contextReadFromEvent(
+  event: RunEvent,
+): { filesRead: number; totalFiles: number } | null {
+  if (event.type !== 'CONTEXT_READ') return null;
+  const payload = event.payload;
+  if (!payload) return null;
+  const filesRead = payload.filesRead;
+  if (typeof filesRead !== 'number') return null;
+  const totalFiles = payload.totalFiles;
+  return {
+    filesRead,
+    totalFiles: typeof totalFiles === 'number' ? totalFiles : filesRead,
+  };
+}
+
+/** A single file change proposed by the agent. */
+export interface ProposedFileChange {
+  path: string;
+  content: string;
+}
+
+/**
+ * The file changes proposed by the agent, taken from the newest
+ * `CHANGES_PROPOSED` event and parsed defensively (like
+ * `pullRequestUrlFromEvent`). Returns null when no such event exists; malformed
+ * entries are skipped, and a missing summary/content becomes an empty string.
+ */
+export function proposedChangesFromEvents(
+  events: RunEvent[],
+): { summary: string; files: ProposedFileChange[] } | null {
+  let newest: RunEvent | null = null;
+  for (const event of events) {
+    if (event.type !== 'CHANGES_PROPOSED') continue;
+    if (
+      !newest ||
+      new Date(event.createdAt).getTime() >= new Date(newest.createdAt).getTime()
+    ) {
+      newest = event;
+    }
+  }
+  if (!newest?.payload) return null;
+  const payload = newest.payload;
+  const summary = typeof payload.summary === 'string' ? payload.summary : '';
+  const rawFiles = Array.isArray(payload.files) ? payload.files : [];
+  const files: ProposedFileChange[] = [];
+  for (const entry of rawFiles) {
+    if (!entry || typeof entry !== 'object') continue;
+    const path = (entry as Record<string, unknown>).path;
+    if (typeof path !== 'string') continue;
+    const content = (entry as Record<string, unknown>).content;
+    files.push({ path, content: typeof content === 'string' ? content : '' });
+  }
+  return { summary, files };
 }
 
 /** `provider · model`, shown verbatim (never translated). */

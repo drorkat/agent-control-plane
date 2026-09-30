@@ -3,6 +3,9 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  Check,
+  ChevronDown,
+  Copy,
   Github,
   KeyRound,
   Link2,
@@ -13,6 +16,7 @@ import {
   Trash2,
   TriangleAlert,
   Unlink,
+  Webhook as WebhookIcon,
   X,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
@@ -21,6 +25,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth/context';
+import { canManage } from '@/lib/auth/roles';
 import {
   connectGithub,
   disconnectGithub,
@@ -28,8 +34,18 @@ import {
   type GithubConnection,
 } from '@/lib/github';
 import { useI18n } from '@/lib/i18n/context';
-import type { TranslateFn } from '@/lib/i18n/dictionary';
+import type { TranslateFn, TranslationKey } from '@/lib/i18n/dictionary';
 import { cn } from '@/lib/utils';
+import {
+  WEBHOOK_EVENTS,
+  createWebhook,
+  deleteWebhook,
+  listWebhookDeliveries,
+  listWebhooks,
+  type CreatedWebhook,
+  type Webhook,
+  type WebhookDelivery,
+} from '@/lib/webhooks';
 
 // Safe, client-facing shape of a stored provider credential. The API never
 // returns key material (ciphertext/iv/authTag) or the plaintext key itself.
@@ -79,6 +95,18 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Absolute date + time, for delivery timestamps (browser-default locale). */
+function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch {
+    return '';
+  }
+}
+
 /** Masked display for a stored key: fixed dots plus the retained last 4 chars. */
 function maskedKey(last4: string | null): string {
   return `••••••••${last4 ?? '••••'}`;
@@ -86,6 +114,8 @@ function maskedKey(last4: string | null): string {
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const isManager = canManage(user?.role);
   const [credentials, setCredentials] = React.useState<ProviderCredential[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -186,27 +216,29 @@ export default function SettingsPage() {
                 {t('settings.providers.subtitle')}
               </p>
             </div>
-            <Button
-              variant={showForm ? 'secondary' : 'primary'}
-              size="md"
-              onClick={() => (showForm ? closeForm() : openForm())}
-            >
-              {showForm ? (
-                <>
-                  <X />
-                  {t('common.cancel')}
-                </>
-              ) : (
-                <>
-                  <Plus />
-                  {t('settings.providers.add')}
-                </>
-              )}
-            </Button>
+            {isManager && (
+              <Button
+                variant={showForm ? 'secondary' : 'primary'}
+                size="md"
+                onClick={() => (showForm ? closeForm() : openForm())}
+              >
+                {showForm ? (
+                  <>
+                    <X />
+                    {t('common.cancel')}
+                  </>
+                ) : (
+                  <>
+                    <Plus />
+                    {t('settings.providers.add')}
+                  </>
+                )}
+              </Button>
+            )}
           </div>
 
           {/* Inline add form */}
-          {showForm && (
+          {isManager && showForm && (
             <Card className="animate-fade-up">
               <CardContent className="p-5">
                 <form onSubmit={handleCreate} className="space-y-4" noValidate>
@@ -334,6 +366,7 @@ export default function SettingsPage() {
                   <CredentialRow
                     key={credential.id}
                     credential={credential}
+                    canManage={isManager}
                     onDeleted={(id) =>
                       setCredentials((prev) => prev.filter((c) => c.id !== id))
                     }
@@ -353,7 +386,7 @@ export default function SettingsPage() {
                   {t('settings.emptyDesc')}
                 </p>
               </div>
-              {!showForm && (
+              {isManager && !showForm && (
                 <Button variant="secondary" size="sm" onClick={openForm}>
                   <Plus />
                   {t('settings.providers.add')}
@@ -364,13 +397,16 @@ export default function SettingsPage() {
         </section>
 
         {/* GitHub integration section */}
-        <GithubSection t={t} />
+        <GithubSection t={t} canManage={isManager} />
+
+        {/* Webhooks section */}
+        <WebhooksSection t={t} canManage={isManager} />
       </div>
     </AppShell>
   );
 }
 
-function GithubSection({ t }: { t: TranslateFn }) {
+function GithubSection({ t, canManage }: { t: TranslateFn; canManage: boolean }) {
   const [connection, setConnection] = React.useState<GithubConnection | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -501,25 +537,27 @@ function GithubSection({ t }: { t: TranslateFn }) {
                 </div>
               </div>
 
-              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                {disconnectError && (
-                  <span className="flex items-center gap-1.5 text-xs text-danger sm:me-auto">
-                    <AlertCircle className="size-3.5 shrink-0" />
-                    {disconnectError}
-                  </span>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleDisconnect}
-                  disabled={disconnecting}
-                >
-                  {disconnecting ? <Loader2 className="animate-spin" /> : <Unlink />}
-                  {disconnecting ? t('common.removing') : t('settings.github.disconnect')}
-                </Button>
-              </div>
+              {canManage && (
+                <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                  {disconnectError && (
+                    <span className="flex items-center gap-1.5 text-xs text-danger sm:me-auto">
+                      <AlertCircle className="size-3.5 shrink-0" />
+                      {disconnectError}
+                    </span>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleDisconnect}
+                    disabled={disconnecting}
+                  >
+                    {disconnecting ? <Loader2 className="animate-spin" /> : <Unlink />}
+                    {disconnecting ? t('common.removing') : t('settings.github.disconnect')}
+                  </Button>
+                </div>
+              )}
             </div>
-          ) : (
+          ) : canManage ? (
             <form onSubmit={handleConnect} className="space-y-4" noValidate>
               <div className="flex items-center gap-3">
                 <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
@@ -572,6 +610,15 @@ function GithubSection({ t }: { t: TranslateFn }) {
                 </Button>
               </div>
             </form>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                <Github className="size-5" />
+              </span>
+              <p className="text-sm text-muted-foreground">
+                {t('settings.github.notConnected')}
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -581,10 +628,12 @@ function GithubSection({ t }: { t: TranslateFn }) {
 
 function CredentialRow({
   credential,
+  canManage,
   onDeleted,
   t,
 }: {
   credential: ProviderCredential;
+  canManage: boolean;
   onDeleted: (id: string) => void;
   t: TranslateFn;
 }) {
@@ -635,27 +684,28 @@ function CredentialRow({
             {error}
           </span>
         )}
-        {confirming ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setConfirming(false)}
-              disabled={deleting}
-            >
-              {t('common.cancel')}
+        {canManage &&
+          (confirming ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirming(false)}
+                disabled={deleting}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
+                {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                {deleting ? t('common.removing') : t('common.confirmDelete')}
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+              <Trash2 />
+              {t('common.delete')}
             </Button>
-            <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
-              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-              {deleting ? t('common.removing') : t('common.confirmDelete')}
-            </Button>
-          </>
-        ) : (
-          <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
-            <Trash2 />
-            {t('common.delete')}
-          </Button>
-        )}
+          ))}
       </div>
     </div>
   );
@@ -677,5 +727,522 @@ function CredentialListSkeleton() {
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+function WebhooksSection({ t, canManage }: { t: TranslateFn; canManage: boolean }) {
+  const [webhooks, setWebhooks] = React.useState<Webhook[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [showForm, setShowForm] = React.useState(false);
+  const [url, setUrl] = React.useState('');
+  const [events, setEvents] = React.useState<string[]>([...WEBHOOK_EVENTS]);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const [created, setCreated] = React.useState<CreatedWebhook | null>(null);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listWebhooks();
+      setWebhooks(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.webhooks.loadError'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  function resetForm() {
+    setUrl('');
+    setEvents([...WEBHOOK_EVENTS]);
+    setFormError(null);
+  }
+
+  function openForm() {
+    resetForm();
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    resetForm();
+    setShowForm(false);
+  }
+
+  function toggleEvent(name: string) {
+    setEvents((prev) =>
+      prev.includes(name) ? prev.filter((e) => e !== name) : [...prev, name],
+    );
+  }
+
+  async function handleCreate(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed || events.length === 0) return;
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const webhook = await createWebhook({ url: trimmed, events });
+      setCreated(webhook);
+      setShowForm(false);
+      resetForm();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : t('settings.webhooks.createError'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleSecretDone() {
+    setCreated(null);
+    void load();
+  }
+
+  const hasWebhooks = webhooks.length > 0;
+  const canSubmit = url.trim().length > 0 && events.length > 0;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">
+              {t('settings.webhooks.title')}
+            </h2>
+            {!loading && !error && hasWebhooks && (
+              <Badge variant="neutral">{webhooks.length}</Badge>
+            )}
+          </div>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            {t('settings.webhooks.description')}
+          </p>
+        </div>
+        {canManage && !created && (
+          <Button
+            variant={showForm ? 'secondary' : 'primary'}
+            size="md"
+            onClick={() => (showForm ? closeForm() : openForm())}
+          >
+            {showForm ? (
+              <>
+                <X />
+                {t('common.cancel')}
+              </>
+            ) : (
+              <>
+                <Plus />
+                {t('settings.webhooks.add')}
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+
+      {/* One-time signing secret, shown once after creation */}
+      {created && (
+        <Card className="animate-fade-up border-primary/30 bg-primary/5">
+          <CardContent className="space-y-3 p-5">
+            <div className="flex items-start gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/25">
+                <ShieldCheck className="size-5" />
+              </span>
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold text-foreground">
+                  {t('settings.webhooks.secretTitle')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('settings.webhooks.secretHelp')}
+                </p>
+              </div>
+            </div>
+            <SecretReveal secret={created.secret} t={t} />
+            <div className="flex justify-end">
+              <Button size="sm" onClick={handleSecretDone}>
+                <Check />
+                {t('settings.webhooks.done')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Inline add form */}
+      {canManage && showForm && !created && (
+        <Card className="animate-fade-up">
+          <CardContent className="p-5">
+            <form onSubmit={handleCreate} className="space-y-4" noValidate>
+              <div className="space-y-1.5">
+                <label htmlFor="webhook-url" className={labelClass}>
+                  {t('settings.webhooks.url')} <span className="text-danger">*</span>
+                </label>
+                <Input
+                  id="webhook-url"
+                  type="url"
+                  dir="ltr"
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                  placeholder={t('settings.webhooks.urlPlaceholder')}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={submitting}
+                />
+              </div>
+
+              <fieldset className="space-y-2" disabled={submitting}>
+                <legend className={cn(labelClass, 'mb-2')}>{t('settings.webhooks.events')}</legend>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {WEBHOOK_EVENTS.map((name) => {
+                    const inputId = `webhook-event-${name}`;
+                    const checked = events.includes(name);
+                    return (
+                      <label
+                        key={name}
+                        htmlFor={inputId}
+                        className={cn(
+                          'flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors',
+                          checked
+                            ? 'border-primary/40 bg-primary/5 text-foreground'
+                            : 'border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground',
+                        )}
+                      >
+                        <input
+                          id={inputId}
+                          type="checkbox"
+                          className="size-4 shrink-0 accent-primary"
+                          checked={checked}
+                          onChange={() => toggleEvent(name)}
+                        />
+                        <span>{t(('webhooks.event.' + name) as TranslationKey)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <div className="flex flex-col-reverse items-stretch gap-2 pt-1 sm:flex-row sm:items-center sm:justify-end">
+                {formError && (
+                  <p className="flex items-center gap-1.5 text-sm text-danger sm:me-auto">
+                    <TriangleAlert className="size-4 shrink-0" />
+                    {formError}
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="md"
+                  onClick={closeForm}
+                  disabled={submitting}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" size="md" disabled={submitting || !canSubmit}>
+                  {submitting ? (
+                    <>
+                      <Loader2 className="animate-spin" />
+                      {t('settings.webhooks.creating')}
+                    </>
+                  ) : (
+                    <>
+                      <Plus />
+                      {t('settings.webhooks.create')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Content states */}
+      {loading ? (
+        <CredentialListSkeleton />
+      ) : error ? (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <span className="grid size-11 place-items-center rounded-full bg-danger/10 text-danger ring-1 ring-inset ring-danger/25">
+                <TriangleAlert className="size-5" />
+              </span>
+              <p className="mx-auto max-w-sm text-sm text-muted-foreground">{error}</p>
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
+                <RotateCcw />
+                {t('common.tryAgain')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : hasWebhooks ? (
+        <Card>
+          <CardContent className="divide-y divide-border p-0">
+            {webhooks.map((webhook) => (
+              <WebhookRow
+                key={webhook.id}
+                webhook={webhook}
+                canManage={canManage}
+                onDeleted={(id) => setWebhooks((prev) => prev.filter((w) => w.id !== id))}
+                t={t}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-14 text-center">
+          <span className="grid size-11 place-items-center rounded-full bg-card text-muted-foreground shadow-xs ring-1 ring-border">
+            <WebhookIcon className="size-5" />
+          </span>
+          <p className="text-sm font-semibold text-foreground">{t('settings.webhooks.empty')}</p>
+          {canManage && !showForm && (
+            <Button variant="secondary" size="sm" onClick={openForm}>
+              <Plus />
+              {t('settings.webhooks.add')}
+            </Button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SecretReveal({ secret, t }: { secret: string; t: TranslateFn }) {
+  const [copied, setCopied] = React.useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable — leave the secret visible for manual copy */
+    }
+  }
+
+  return (
+    <div className="flex items-stretch gap-2">
+      <code
+        dir="ltr"
+        className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-lg border border-border bg-card px-3 py-2 font-mono text-xs text-foreground"
+      >
+        {secret}
+      </code>
+      <Button type="button" variant="secondary" size="sm" onClick={copy} className="shrink-0">
+        {copied ? <Check /> : <Copy />}
+        {copied ? t('settings.webhooks.copied') : t('settings.webhooks.copy')}
+      </Button>
+    </div>
+  );
+}
+
+function WebhookRow({
+  webhook,
+  canManage,
+  onDeleted,
+  t,
+}: {
+  webhook: Webhook;
+  canManage: boolean;
+  onDeleted: (id: string) => void;
+  t: TranslateFn;
+}) {
+  const [confirming, setConfirming] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const [expanded, setExpanded] = React.useState(false);
+  const [deliveries, setDeliveries] = React.useState<WebhookDelivery[] | null>(null);
+  const [deliveriesLoading, setDeliveriesLoading] = React.useState(false);
+  const [deliveriesError, setDeliveriesError] = React.useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteWebhook(webhook.id);
+      onDeleted(webhook.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.row.deleteError'));
+      setDeleting(false);
+    }
+  }
+
+  async function toggleDeliveries() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && deliveries === null && !deliveriesLoading) {
+      setDeliveriesLoading(true);
+      setDeliveriesError(null);
+      try {
+        const data = await listWebhookDeliveries(webhook.id);
+        setDeliveries(data);
+      } catch (err) {
+        setDeliveriesError(err instanceof Error ? err.message : t('settings.webhooks.loadError'));
+      } finally {
+        setDeliveriesLoading(false);
+      }
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+            <WebhookIcon className="size-5" />
+          </span>
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                dir="ltr"
+                className="truncate font-mono text-sm font-medium text-foreground"
+                title={webhook.url}
+              >
+                {webhook.url}
+              </span>
+              <Badge variant={webhook.active ? 'success' : 'neutral'} dot>
+                {webhook.active
+                  ? t('settings.webhooks.active')
+                  : t('settings.webhooks.inactive')}
+              </Badge>
+            </div>
+            {webhook.events.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {webhook.events.map((ev) => (
+                  <Badge key={ev} variant="neutral">
+                    {t(('webhooks.event.' + ev) as TranslationKey)}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span>{t('settings.webhooks.lastDelivery')}:</span>
+              {webhook.lastDeliveredAt ? (
+                <>
+                  {webhook.lastStatus === 'success' ? (
+                    <Badge variant="success">{t('settings.webhooks.statusSuccess')}</Badge>
+                  ) : webhook.lastStatus === 'failed' ? (
+                    <Badge variant="danger">{t('settings.webhooks.statusFailed')}</Badge>
+                  ) : webhook.lastStatus ? (
+                    <Badge variant="neutral">{webhook.lastStatus}</Badge>
+                  ) : null}
+                  <span>{formatDateTime(webhook.lastDeliveredAt)}</span>
+                </>
+              ) : (
+                <span>{t('settings.webhooks.never')}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          {error && (
+            <span className="flex items-center gap-1.5 text-xs text-danger sm:me-auto">
+              <AlertCircle className="size-3.5 shrink-0" />
+              {error}
+            </span>
+          )}
+          {canManage &&
+            (confirming ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirming(false)}
+                  disabled={deleting}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button variant="danger" size="sm" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                  {deleting ? t('settings.webhooks.removing') : t('settings.webhooks.confirmRemove')}
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+                <Trash2 />
+                {t('settings.webhooks.remove')}
+              </Button>
+            ))}
+        </div>
+      </div>
+
+      {/* Recent deliveries (lazy-loaded on expand) */}
+      <div className="border-t border-border pt-3">
+        <button
+          type="button"
+          onClick={toggleDeliveries}
+          aria-expanded={expanded}
+          className="inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <ChevronDown
+            className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
+          />
+          {expanded
+            ? t('settings.webhooks.hideDeliveries')
+            : t('settings.webhooks.viewDeliveries')}
+        </button>
+
+        {expanded && (
+          <div className="mt-3">
+            {deliveriesLoading ? (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" />
+                {t('settings.webhooks.deliveries')}
+              </p>
+            ) : deliveriesError ? (
+              <p className="flex items-center gap-1.5 text-xs text-danger">
+                <AlertCircle className="size-3.5 shrink-0" />
+                {deliveriesError}
+              </p>
+            ) : deliveries && deliveries.length > 0 ? (
+              <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                {deliveries.map((delivery) => (
+                  <li
+                    key={delivery.id}
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-xs"
+                  >
+                    <span className="flex flex-wrap items-center gap-2">
+                      <Badge variant={delivery.status === 'success' ? 'success' : 'danger'} dot>
+                        {delivery.status === 'success'
+                          ? t('settings.webhooks.statusSuccess')
+                          : t('settings.webhooks.statusFailed')}
+                      </Badge>
+                      <span className="font-medium text-foreground">
+                        {t(('webhooks.event.' + delivery.event) as TranslationKey)}
+                      </span>
+                      {delivery.statusCode !== null && (
+                        <span className="font-mono text-muted-foreground" dir="ltr">
+                          {delivery.statusCode}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {formatDateTime(delivery.createdAt)}
+                    </span>
+                    {delivery.status === 'failed' && delivery.error && (
+                      <span
+                        dir="auto"
+                        className="basis-full break-words text-[11px] text-danger/90"
+                      >
+                        {delivery.error}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {t('settings.webhooks.noDeliveries')}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -11,7 +11,14 @@ import { computeCostUsd } from '../ai/pricing';
 import { GatewayService } from '../gateway/gateway.service';
 import { AuditService } from '../audit/audit.service';
 import { GitHubClientFactory } from '../github/github-client.factory';
-import { OpenPrInput } from '../github/github-client.interface';
+import { OpenPrFile, OpenPrInput } from '../github/github-client.interface';
+import { RepoContextService } from './repo-context.service';
+import { buildAgentSystemPrompt, parseChangeProposal } from './change-proposal';
+import {
+  WebhookDispatcher,
+  WebhookEvent,
+} from '../webhooks/webhook-dispatcher.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // The representative tool action every run proposes in the MVP. Real tool-call
 // extraction from the model response comes later; for now the run engine always
@@ -26,7 +33,27 @@ export class RunsService {
     private readonly gateway: GatewayService,
     private readonly audit: AuditService,
     private readonly github: GitHubClientFactory,
+    private readonly repoContext: RepoContextService,
+    private readonly webhooks: WebhookDispatcher,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  /**
+   * Fan a lifecycle event out to both channels: outbound webhooks (fire-and-
+   * forget, signed) and an in-app notification. The organization id is captured
+   * synchronously here so the async webhook delivery and notification write bind
+   * to the right tenant even after the request context unwinds. Never throws.
+   */
+  private emit(
+    event: WebhookEvent,
+    data: Record<string, unknown>,
+    notif: { type: string; title: string; body?: string },
+  ): void {
+    const organizationId = currentOrgId();
+    // dispatch() captures the org synchronously and delivers in the background.
+    this.webhooks.dispatch(event, data);
+    void this.notifications.notify({ ...notif, organizationId });
+  }
 
   /**
    * Start a run: resolve the task and agent, create the Run row, call the LLM,
@@ -76,10 +103,39 @@ export class RunsService {
       data: { status: 'working' },
     });
 
-    const system =
+    const baseInstructions =
       agent.instructions || 'You are a helpful software engineering agent.';
-    const prompt =
+    const taskText =
       task.title + (task.description ? '\n\n' + task.description : '');
+
+    // If the task's project is linked to a GitHub repo, read real code as
+    // context so the agent proposes actual file edits (not just a plan). When
+    // there is no repo (or GitHub can't be reached) we fall back to plain
+    // context-free planning and the old proposal-document PR path.
+    const project = await this.prisma.project.findFirst({
+      where: { id: task.projectId, organizationId: currentOrgId() },
+      select: { repoOwner: true, repoName: true },
+    });
+
+    let system = baseInstructions;
+    let prompt = taskText;
+    let hasRepoContext = false;
+    if (project?.repoOwner && project?.repoName) {
+      const context = await this.repoContext.gather(
+        project.repoOwner,
+        project.repoName,
+        taskText,
+      );
+      if (context) {
+        hasRepoContext = true;
+        system = buildAgentSystemPrompt(baseInstructions);
+        prompt = `${taskText}\n\n${context.promptSection}`;
+        await this.addEvent(run.id, 'CONTEXT_READ', {
+          filesRead: context.files.length,
+          totalFiles: context.allPaths.length,
+        });
+      }
+    }
 
     try {
       // The decrypted key lives only inside the provider instance returned here;
@@ -106,12 +162,35 @@ export class RunsService {
         },
       });
 
+      // When the agent had repo context, try to parse structured file edits from
+      // its response and record them, so the approved PR commits the real
+      // changes rather than a proposal document.
+      if (hasRepoContext) {
+        const proposal = parseChangeProposal(res.text);
+        if (proposal && proposal.files.length > 0) {
+          const changes: Prisma.InputJsonObject = {
+            summary: proposal.summary,
+            fileCount: proposal.files.length,
+            files: proposal.files.map((f) => ({
+              path: f.path,
+              content: f.content,
+            })),
+          };
+          await this.addEvent(run.id, 'CHANGES_PROPOSED', changes);
+        }
+      }
+
       // Route a representative proposed action through the Tool Gateway.
       const action = PROPOSED_ACTION;
       const { decision, risk } = this.gateway.evaluate(action);
 
       if (decision === 'blocked') {
         await this.addEvent(run.id, 'TOOL_BLOCKED', { action });
+        this.emit(
+          'run.failed',
+          { runId: run.id, task: task.title, reason: 'blocked_by_policy' },
+          { type: 'run.failed', title: 'Run blocked', body: task.title },
+        );
         await this.audit.record({
           actorType: 'agent',
           actorId: agent.id,
@@ -146,6 +225,21 @@ export class RunsService {
           action,
           risk,
         });
+        this.emit(
+          'approval.requested',
+          {
+            runId: run.id,
+            approvalId: approval.id,
+            action,
+            risk,
+            task: task.title,
+          },
+          {
+            type: 'approval.requested',
+            title: 'Approval requested',
+            body: task.title,
+          },
+        );
         await this.audit.record({
           actorType: 'agent',
           actorId: agent.id,
@@ -184,6 +278,11 @@ export class RunsService {
           data: { status: 'completed', completedAt: new Date() },
         });
         await this.addEvent(run.id, 'RUN_COMPLETED');
+        this.emit(
+          'run.completed',
+          { runId: run.id, task: task.title, status: 'completed' },
+          { type: 'run.completed', title: 'Run completed', body: task.title },
+        );
         await this.prisma.agent.update({
           where: { id: agent.id },
           data: { status: 'idle' },
@@ -193,6 +292,11 @@ export class RunsService {
       // Record the failure message only — never any key material.
       const message = err instanceof Error ? err.message : String(err);
       await this.addEvent(run.id, 'RUN_FAILED', { message });
+      this.emit(
+        'run.failed',
+        { runId: run.id, task: task.title, message },
+        { type: 'run.failed', title: 'Run failed', body: message },
+      );
       await this.prisma.run.update({
         where: { id: run.id },
         data: { status: 'failed', completedAt: new Date() },
@@ -242,11 +346,31 @@ export class RunsService {
           resourceId: runId,
           metadata: { action, result },
         });
+        const prUrl =
+          typeof result.pullRequestUrl === 'string'
+            ? result.pullRequestUrl
+            : undefined;
+        if (prUrl) {
+          this.emit(
+            'pull_request.opened',
+            { runId, pullRequestUrl: prUrl },
+            {
+              type: 'pull_request.opened',
+              title: 'Pull request opened',
+              body: prUrl,
+            },
+          );
+        }
         await this.addEvent(runId, 'RUN_COMPLETED');
         await this.prisma.run.update({
           where: { id: runId },
           data: { status: 'completed', completedAt: new Date() },
         });
+        this.emit(
+          'run.completed',
+          { runId, status: 'completed' },
+          { type: 'run.completed', title: 'Run completed' },
+        );
       } catch (err) {
         // The GitHub client never puts token material in its error messages, so
         // this is safe to record and show.
@@ -264,6 +388,11 @@ export class RunsService {
           where: { id: runId },
           data: { status: 'failed', completedAt: new Date() },
         });
+        this.emit(
+          'run.failed',
+          { runId, message },
+          { type: 'run.failed', title: 'Run failed', body: message },
+        );
       }
     } else {
       await this.addEvent(runId, 'APPROVAL_REJECTED');
@@ -278,6 +407,11 @@ export class RunsService {
       await this.addEvent(runId, 'RUN_FAILED', {
         message: 'Rejected by reviewer',
       });
+      this.emit(
+        'run.failed',
+        { runId, reason: 'rejected' },
+        { type: 'run.failed', title: 'Run rejected' },
+      );
       await this.prisma.run.update({
         where: { id: runId },
         data: { status: 'failed', completedAt: new Date() },
@@ -336,18 +470,48 @@ export class RunsService {
       );
     }
 
-    // Build the proposal document from the agent's latest model response.
-    const modelEvent = await this.prisma.runEvent.findFirst({
-      where: { runId: run.id, type: 'MODEL_RESPONSE' },
-      orderBy: { createdAt: 'desc' },
-    });
-    const proposal =
-      modelEvent && modelEvent.payload && typeof modelEvent.payload === 'object'
-        ? String((modelEvent.payload as { text?: unknown }).text ?? '')
-        : '';
-
     const title = task?.title?.trim() || 'Agent Control Plane proposal';
     const branch = `acp/run-${run.id.slice(0, 8)}`;
+
+    // Prefer the agent's structured file edits (the real change). Fall back to a
+    // proposal document built from the model's text when it produced none.
+    const changesEvent = await this.prisma.runEvent.findFirst({
+      where: { runId: run.id, type: 'CHANGES_PROPOSED' },
+      orderBy: { createdAt: 'desc' },
+    });
+    const proposedFiles = this.readProposedFiles(changesEvent?.payload);
+    const summary = this.readProposedSummary(changesEvent?.payload);
+
+    let files: OpenPrFile[];
+    let proposalSection: string;
+    if (proposedFiles.length > 0) {
+      files = proposedFiles;
+      proposalSection =
+        summary ||
+        `Edits ${proposedFiles.length} file(s): ${proposedFiles
+          .map((f) => f.path)
+          .join(', ')}.`;
+    } else {
+      // No structured edits — commit a proposal document from the model text.
+      const modelEvent = await this.prisma.runEvent.findFirst({
+        where: { runId: run.id, type: 'MODEL_RESPONSE' },
+        orderBy: { createdAt: 'desc' },
+      });
+      const proposalText =
+        modelEvent &&
+        modelEvent.payload &&
+        typeof modelEvent.payload === 'object'
+          ? String((modelEvent.payload as { text?: unknown }).text ?? '')
+          : '';
+      proposalSection = proposalText || '_No proposal text was produced._';
+      files = [
+        {
+          path: `acp/proposals/${run.id}.md`,
+          content: `# ${title}\n\n${proposalSection}\n`,
+        },
+      ];
+    }
+
     const body = [
       'Proposed by an Agent Control Plane agent and approved by a human reviewer.',
       '',
@@ -355,8 +519,8 @@ export class RunsService {
       title,
       ...(task?.description ? ['', task.description] : []),
       '',
-      '## Proposal',
-      proposal || '_No proposal text was produced._',
+      '## Summary',
+      proposalSection,
     ].join('\n');
 
     const input: OpenPrInput = {
@@ -365,9 +529,7 @@ export class RunsService {
       title,
       body,
       branch,
-      files: [
-        { path: `acp/proposals/${run.id}.md`, content: `# ${title}\n\n${body}\n` },
-      ],
+      files,
     };
 
     const pr = await client.openPullRequest(input);
@@ -377,9 +539,52 @@ export class RunsService {
       opened: true,
       pullRequestUrl: pr.pullRequestUrl,
       branch: pr.branch,
+      filesChanged: files.length,
+      files: files.map((f) => f.path),
       ...(typeof pr.number === 'number' ? { number: pr.number } : {}),
     };
     return result;
+  }
+
+  /**
+   * Read the proposed file edits (path + content) from a CHANGES_PROPOSED event
+   * payload, defensively — anything malformed is ignored and yields an empty
+   * list so the caller falls back to a proposal document.
+   */
+  private readProposedFiles(
+    payload: Prisma.JsonValue | null | undefined,
+  ): OpenPrFile[] {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return [];
+    }
+    const raw = (payload as { files?: unknown }).files;
+    if (!Array.isArray(raw)) return [];
+    const out: OpenPrFile[] = [];
+    for (const entry of raw) {
+      if (
+        entry &&
+        typeof entry === 'object' &&
+        typeof (entry as { path?: unknown }).path === 'string' &&
+        typeof (entry as { content?: unknown }).content === 'string'
+      ) {
+        out.push({
+          path: (entry as { path: string }).path,
+          content: (entry as { content: string }).content,
+        });
+      }
+    }
+    return out;
+  }
+
+  /** Read the summary string from a CHANGES_PROPOSED event payload, or ''. */
+  private readProposedSummary(
+    payload: Prisma.JsonValue | null | undefined,
+  ): string {
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const s = (payload as { summary?: unknown }).summary;
+      if (typeof s === 'string') return s;
+    }
+    return '';
   }
 
   /** All runs in the default org, newest first, with agent/task summaries. */

@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
+import { ProposedChanges } from '@/components/runs/proposed-changes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,11 +47,13 @@ import {
   RunEvent,
   collectFailureMessage,
   collectModelOutput,
+  contextReadFromEvent,
   formatCost,
   formatDateTime,
   formatDuration,
   formatNumber,
   formatRelativeTime,
+  proposedChangesFromEvents,
   providerModel,
   pullRequestUrlFromEvent,
   runDurationMs,
@@ -191,6 +194,13 @@ function RunView({
   const failureMessage = collectFailureMessage(events);
   const isFailed = run.status === 'failed';
 
+  const proposedChanges = React.useMemo(() => proposedChangesFromEvents(events), [events]);
+  const hasRepoContext = React.useMemo(
+    () => events.some((event) => contextReadFromEvent(event) !== null),
+    [events],
+  );
+  const showProposedChanges = proposedChanges !== null || hasRepoContext;
+
   const agentName = run.agent?.name ?? t('runs.unknownAgent');
   const agentId = run.agent?.id ?? run.agentId;
   const taskTitle = run.task?.title ?? t('runs.unknownTask');
@@ -305,6 +315,9 @@ function RunView({
           </div>
         </CardContent>
       </Card>
+
+      {/* Proposed changes */}
+      {showProposedChanges && <ProposedChanges changes={proposedChanges} t={t} />}
 
       {/* Timeline */}
       <Card>
@@ -438,6 +451,7 @@ function TimelineItem({
   const message =
     event.type === 'RUN_FAILED' && typeof rawMessage === 'string' ? rawMessage : null;
   const pullRequestUrl = pullRequestUrlFromEvent(event);
+  const contextRead = contextReadFromEvent(event);
 
   return (
     <li className="relative flex gap-3 ps-6">
@@ -462,6 +476,11 @@ function TimelineItem({
         {message && (
           <p dir="auto" className="mt-1 whitespace-pre-wrap break-words text-sm text-danger">
             {message}
+          </p>
+        )}
+        {contextRead && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t('runs.context.readFiles', { count: contextRead.filesRead })}
           </p>
         )}
         {pullRequestUrl && (
