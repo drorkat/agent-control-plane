@@ -3,10 +3,15 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  Check,
+  Clock,
+  Copy,
   Info,
+  Link2,
   Loader2,
-  Plus,
+  Mail,
   RotateCcw,
+  Send,
   Trash2,
   TriangleAlert,
   UserPlus,
@@ -23,13 +28,18 @@ import { canManage, type Role } from '@/lib/auth/roles';
 import { useI18n } from '@/lib/i18n/context';
 import type { TranslateFn, TranslationKey } from '@/lib/i18n/dictionary';
 import {
-  createMember,
   listMembers,
   removeMember,
   updateMemberRole,
   type AssignableRole,
   type Member,
 } from '@/lib/members';
+import {
+  createInvitation,
+  listInvitations,
+  revokeInvitation,
+  type Invitation,
+} from '@/lib/invitations';
 import { cn } from '@/lib/utils';
 
 // ── role helpers ──────────────────────────────────────────────────────────
@@ -74,7 +84,7 @@ const fieldControl =
 
 const labelClass = 'block text-sm font-medium text-foreground';
 
-/** Locale-aware "member since" date (kept locale-aware via `lang`). */
+/** Locale-aware short date. */
 function formatDate(iso: string, lang: string): string {
   try {
     return new Date(iso).toLocaleDateString(lang, {
@@ -96,6 +106,32 @@ function initialsOf(name: string | null, email: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/** Build the shareable accept link for a token (client-side origin). */
+function inviteLink(token: string): string {
+  if (typeof window === 'undefined') return '';
+  return `${window.location.origin}/accept-invite?token=${token}`;
+}
+
+/** A small copy-to-clipboard button that flips to "Copied" for ~2s. */
+function CopyLinkButton({ value, t }: { value: string; t: TranslateFn }) {
+  const [copied, setCopied] = React.useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+  }
+  return (
+    <Button variant="secondary" size="sm" onClick={copy} type="button">
+      {copied ? <Check /> : <Copy />}
+      {copied ? t('team.linkCopied') : t('team.copyLink')}
+    </Button>
+  );
+}
+
 // ── page ────────────────────────────────────────────────────────────────────
 
 export default function TeamPage() {
@@ -104,6 +140,7 @@ export default function TeamPage() {
   const isManager = canManage(user?.role);
 
   const [members, setMembers] = React.useState<Member[]>([]);
+  const [invitations, setInvitations] = React.useState<Invitation[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [showForm, setShowForm] = React.useState(false);
@@ -121,15 +158,19 @@ export default function TeamPage() {
     }
   }, [t]);
 
+  const loadInvitations = React.useCallback(async () => {
+    if (!isManager) return;
+    try {
+      setInvitations(await listInvitations());
+    } catch {
+      // Non-managers 403 here; the roster notice already explains the limits.
+    }
+  }, [isManager]);
+
   React.useEffect(() => {
     void load();
-  }, [load]);
-
-  // Refresh after a successful create, and close the inline form.
-  const handleAdded = React.useCallback(async () => {
-    setShowForm(false);
-    await load();
-  }, [load]);
+    void loadInvitations();
+  }, [load, loadInvitations]);
 
   const hasMembers = members.length > 0;
 
@@ -179,17 +220,19 @@ export default function TeamPage() {
           </div>
         )}
 
-        {/* Inline add-member form (managers only) */}
+        {/* Inline invite form (managers only) */}
         {isManager && showForm && (
-          <AddMemberForm onAdded={handleAdded} onCancel={() => setShowForm(false)} t={t} />
+          <InviteForm
+            onCreated={loadInvitations}
+            onClose={() => setShowForm(false)}
+            t={t}
+          />
         )}
 
-        {/* Content states */}
+        {/* Members */}
         {loading ? (
           <MemberListSkeleton />
         ) : error ? (
-          // A non-manager's list request is expected to 403 — the notice above
-          // already explains it, so we don't also show a loud error card.
           isManager ? (
             <Card>
               <CardContent className="p-6">
@@ -215,12 +258,6 @@ export default function TeamPage() {
               <Users className="size-5" />
             </span>
             <p className="text-sm font-semibold text-foreground">{t('team.empty')}</p>
-            {isManager && !showForm && (
-              <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>
-                <Plus />
-                {t('team.invite')}
-              </Button>
-            )}
           </div>
         ) : (
           <section className="space-y-3">
@@ -245,30 +282,39 @@ export default function TeamPage() {
             </Card>
           </section>
         )}
+
+        {/* Pending invitations (managers only) */}
+        {isManager && (
+          <PendingInvitations
+            invitations={invitations}
+            onChanged={loadInvitations}
+            t={t}
+            lang={lang}
+          />
+        )}
       </div>
     </AppShell>
   );
 }
 
-// ── add-member form ──────────────────────────────────────────────────────────
+// ── invite form ──────────────────────────────────────────────────────────────
 
-function AddMemberForm({
-  onAdded,
-  onCancel,
+function InviteForm({
+  onCreated,
+  onClose,
   t,
 }: {
-  onAdded: () => void | Promise<void>;
-  onCancel: () => void;
+  onCreated: () => void | Promise<void>;
+  onClose: () => void;
   t: TranslateFn;
 }) {
   const [email, setEmail] = React.useState('');
-  const [name, setName] = React.useState('');
-  const [password, setPassword] = React.useState('');
   const [role, setRole] = React.useState<AssignableRole>('member');
   const [submitting, setSubmitting] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const [created, setCreated] = React.useState<Invitation | null>(null);
 
-  const canSubmit = email.trim().length > 0 && password.trim().length >= 8;
+  const canSubmit = email.trim().length > 0;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -276,18 +322,62 @@ function AddMemberForm({
     setSubmitting(true);
     setFormError(null);
     try {
-      await createMember({
-        email: email.trim(),
-        name: name.trim() || undefined,
-        password: password.trim(),
-        role,
-      });
-      await onAdded();
+      const invite = await createInvitation(email.trim(), role);
+      setCreated(invite);
+      await onCreated();
     } catch (err) {
-      // On success the parent closes the form (this unmounts); only reset on error.
-      setFormError(err instanceof Error ? err.message : t('team.addError'));
+      setFormError(err instanceof Error ? err.message : t('team.inviteError'));
+    } finally {
       setSubmitting(false);
     }
+  }
+
+  // After creating, show the shareable link instead of the form.
+  if (created) {
+    const link = inviteLink(created.token);
+    return (
+      <Card className="animate-fade-up border-primary/30">
+        <CardContent className="p-5">
+          <div className="mb-3 flex items-center gap-2.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-success/10 text-success">
+              <Check className="size-[18px]" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold tracking-tight text-foreground">
+                {t('team.inviteCreated')}
+              </h2>
+              <p className="truncate text-xs text-muted-foreground" dir="ltr">
+                {created.email}
+              </p>
+            </div>
+          </div>
+
+          <label className={cn(labelClass, 'mb-1.5')}>{t('team.inviteLink')}</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input value={link} readOnly dir="ltr" onFocus={(e) => e.currentTarget.select()} />
+            <CopyLinkButton value={link} t={t} />
+          </div>
+          <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+            <Info className="size-3.5 shrink-0 translate-y-0.5" />
+            {t('team.inviteLinkHelp')}
+          </p>
+
+          <div className="mt-4 flex justify-end">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setCreated(null);
+                setEmail('');
+                onClose();
+              }}
+            >
+              {t('team.done')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -295,21 +385,21 @@ function AddMemberForm({
       <CardContent className="p-5">
         <div className="mb-4 flex items-center gap-2.5">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-            <UserPlus className="size-[18px]" />
+            <Mail className="size-[18px]" />
           </span>
           <h2 className="text-base font-semibold tracking-tight text-foreground">
-            {t('team.addTitle')}
+            {t('team.inviteTitle')}
           </h2>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="member-email" className={labelClass}>
+              <label htmlFor="invite-email" className={labelClass}>
                 {t('team.email')} <span className="text-danger">*</span>
               </label>
               <Input
-                id="member-email"
+                id="invite-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -321,45 +411,11 @@ function AddMemberForm({
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="member-name" className={labelClass}>
-                {t('team.name')}
-              </label>
-              <Input
-                id="member-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('team.namePlaceholder')}
-                maxLength={200}
-                disabled={submitting}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label htmlFor="member-password" className={labelClass}>
-                {t('team.password')} <span className="text-danger">*</span>
-              </label>
-              <Input
-                id="member-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                spellCheck={false}
-                dir="ltr"
-                disabled={submitting}
-              />
-              <p className="text-xs text-muted-foreground">{t('team.passwordHelp')}</p>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="member-role" className={labelClass}>
+              <label htmlFor="invite-role" className={labelClass}>
                 {t('team.role')}
               </label>
               <select
-                id="member-role"
+                id="invite-role"
                 className={cn(fieldControl, 'h-9 py-1')}
                 value={role}
                 onChange={(e) => setRole(e.target.value as AssignableRole)}
@@ -381,25 +437,19 @@ function AddMemberForm({
                 {formError}
               </p>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="md"
-              onClick={onCancel}
-              disabled={submitting}
-            >
+            <Button type="button" variant="ghost" size="md" onClick={onClose} disabled={submitting}>
               {t('common.cancel')}
             </Button>
             <Button type="submit" size="md" disabled={submitting || !canSubmit}>
               {submitting ? (
                 <>
                   <Loader2 className="animate-spin" />
-                  {t('team.adding')}
+                  {t('team.inviting')}
                 </>
               ) : (
                 <>
-                  <Plus />
-                  {t('team.submit')}
+                  <Send />
+                  {t('team.inviteSubmit')}
                 </>
               )}
             </Button>
@@ -407,6 +457,108 @@ function AddMemberForm({
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+// ── pending invitations ──────────────────────────────────────────────────────
+
+function PendingInvitations({
+  invitations,
+  onChanged,
+  t,
+  lang,
+}: {
+  invitations: Invitation[];
+  onChanged: () => void | Promise<void>;
+  t: TranslateFn;
+  lang: string;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-2 px-1">
+        <h2 className="text-sm font-semibold text-foreground">{t('team.pending')}</h2>
+        {invitations.length > 0 && <Badge variant="neutral">{invitations.length}</Badge>}
+      </div>
+      {invitations.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-6 text-center text-sm text-muted-foreground">
+          {t('team.pendingEmpty')}
+        </p>
+      ) : (
+        <Card>
+          <CardContent className="divide-y divide-border p-0">
+            {invitations.map((inv) => (
+              <InvitationRow key={inv.id} invitation={inv} onChanged={onChanged} t={t} lang={lang} />
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </section>
+  );
+}
+
+function InvitationRow({
+  invitation,
+  onChanged,
+  t,
+  lang,
+}: {
+  invitation: Invitation;
+  onChanged: () => void | Promise<void>;
+  t: TranslateFn;
+  lang: string;
+}) {
+  const [revoking, setRevoking] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const link = inviteLink(invitation.token);
+
+  async function handleRevoke() {
+    setRevoking(true);
+    setError(null);
+    try {
+      await revokeInvitation(invitation.id);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('team.revokeError'));
+      setRevoking(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground ring-1 ring-inset ring-border">
+          <Mail className="size-4" />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium text-foreground" dir="ltr">
+              {invitation.email}
+            </span>
+            <Badge variant={roleVariant(invitation.role)}>
+              {t('team.invitedRole', { role: roleLabel(invitation.role, t) })}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock className="size-3.5 shrink-0" />
+            {t('team.expires', { date: formatDate(invitation.expiresAt, lang) })}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+        {error && (
+          <span className="flex items-center gap-1.5 text-xs text-danger sm:me-auto">
+            <AlertCircle className="size-3.5 shrink-0" />
+            {error}
+          </span>
+        )}
+        <CopyLinkButton value={link} t={t} />
+        <Button variant="ghost" size="sm" onClick={handleRevoke} disabled={revoking}>
+          {revoking ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          {revoking ? t('team.revoking') : t('team.revoke')}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -442,7 +594,6 @@ function MemberRow({
       await updateMemberRole(member.id, next);
       await onChanged();
     } catch (err) {
-      // On success the list refreshes (this row re-renders); only reset on error.
       setError(err instanceof Error ? err.message : t('team.roleUpdateError'));
       setUpdatingRole(false);
     }

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
+import { isBlockedHost } from './url-guard';
 
 /**
  * The events an outbound webhook can subscribe to. Each corresponds to a
@@ -109,6 +110,27 @@ export class WebhookDispatcher {
     event: WebhookEvent,
     body: string,
   ): Promise<void> {
+    // Re-check the target at delivery time (not just at creation): a host can be
+    // pointed at an internal address after the webhook was created — DNS
+    // rebinding, or a later edit — so we re-resolve and classify right before the
+    // fetch. The WEBHOOK_ALLOW_PRIVATE escape hatch (local dev) skips this, in
+    // step with assertSafeWebhookUrl at creation. When blocked we never fetch
+    // (and never sign, so the secret is never touched); the attempt is recorded
+    // as failed with the reason.
+    if (process.env.WEBHOOK_ALLOW_PRIVATE !== '1') {
+      const reason = await isBlockedHost(new URL(webhook.url).hostname);
+      if (reason) {
+        await this.recordDelivery(
+          webhook.id,
+          event,
+          'failed',
+          null,
+          `Blocked (SSRF guard): ${reason}`,
+        );
+        return;
+      }
+    }
+
     const signature =
       'sha256=' +
       createHmac('sha256', webhook.secret).update(body).digest('hex');

@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
 import { CreateWebhookDto } from './dto/create-webhook.dto';
+import { assertSafeWebhookUrl } from './url-guard';
 
 /**
  * Safe, client-facing view of a webhook. It deliberately omits `secret`: the
@@ -58,6 +59,11 @@ export class WebhooksService {
   async create(
     dto: CreateWebhookDto,
   ): Promise<WebhookView & { secret: string }> {
+    // SSRF guard: reject a URL that is (or resolves to) a private/internal
+    // address with a 400 before any secret is generated or row written, so a bad
+    // URL leaves nothing behind.
+    await assertSafeWebhookUrl(dto.url);
+
     const secret = randomBytes(24).toString('hex');
 
     const webhook = await this.prisma.webhook.create({

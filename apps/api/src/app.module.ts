@@ -16,6 +16,7 @@ import { GitHubModule } from './github/github.module';
 import { MembersModule } from './members/members.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { InvitationsModule } from './invitations/invitations.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -37,6 +38,7 @@ import { HealthController } from './health/health.controller';
     MembersModule,
     WebhooksModule,
     NotificationsModule,
+    InvitationsModule,
   ],
   controllers: [HealthController],
 })

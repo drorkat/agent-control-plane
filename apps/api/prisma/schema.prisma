@@ -29,6 +29,7 @@ model Organization {
   githubConnections   GitHubConnection[]
   webhooks            Webhook[]
   notifications       Notification[]
+  invitations         Invitation[]
 }
 
 model User {
@@ -235,6 +236,26 @@ model WebhookDelivery {
   webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
   @@index([webhookId])
+}
+
+// A pending invitation to join an organization. The invitee opens the link
+// carrying `token`, sets their own password, and a User is created with `role`.
+// The token is single-use (acceptedAt is set) and time-limited (expiresAt).
+model Invitation {
+  id              String    @id @default(uuid())
+  organizationId  String
+  email           String
+  role            String    @default("member") // admin | member | viewer
+  token           String    @unique
+  invitedByUserId String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([token])
 }
 
 // An in-app notification shown in the topbar bell. `userId` null means the

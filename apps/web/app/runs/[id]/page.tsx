@@ -344,30 +344,33 @@ function RunView({
         </CardContent>
       </Card>
 
-      {/* Output */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Terminal className="size-4 text-muted-foreground" />
-            {t('runs.output.title')}
-          </CardTitle>
-          <CardDescription>{t('runs.output.desc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {output ? (
-            <div className="rounded-lg border border-border bg-muted/30 p-4">
-              <p
-                dir="auto"
-                className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
-              >
-                {output}
-              </p>
-            </div>
-          ) : (
-            <p className="py-2 text-sm text-muted-foreground">{t('runs.output.empty')}</p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Output — hidden when the agent produced structured changes, since the
+          raw model text is then just the JSON already shown in Proposed changes. */}
+      {!proposedChanges && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Terminal className="size-4 text-muted-foreground" />
+              {t('runs.output.title')}
+            </CardTitle>
+            <CardDescription>{t('runs.output.desc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {output ? (
+              <div className="rounded-lg border border-border bg-muted/30 p-4">
+                <p
+                  dir="auto"
+                  className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
+                >
+                  {output}
+                </p>
+              </div>
+            ) : (
+              <p className="py-2 text-sm text-muted-foreground">{t('runs.output.empty')}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

@@ -1,31 +1,90 @@
-# Local development infrastructure.
-# Runs PostgreSQL (+ Adminer for a quick DB UI). The app (web + api) runs on the
-# host via `npm run dev`. Full app containerization comes in a later iteration.
+# Agent Control Plane — full self-hosted stack.
+#
+#   cp .env.example .env      # then set AUTH_SECRET and ENCRYPTION_KEY
+#   docker compose up -d --build
+#   open http://localhost:3000   (demo login: admin@acp.local / admin1234)
+#
+# Services:
+#   db  — PostgreSQL (data persisted in the `pgdata` volume)
+#   api — NestJS API; on start it syncs the Prisma schema then serves on :4000
+#   web — Next.js web app on :3000; proxies /api/* to the api service
+#
+# Values interpolated below (e.g. ${POSTGRES_USER}) are read from the root .env,
+# so the api's DATABASE_URL and the db's credentials always stay in sync.
+
 services:
-  postgres:
-    image: postgres:16-alpine
+  db:
+    image: postgres:16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-acp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acp_dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-acp}
       POSTGRES_DB: ${POSTGRES_DB:-acp}
     ports:
+      # Exposed on the host for convenience (psql, Prisma Studio, backups).
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acp}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-acp} -d ${POSTGRES_DB:-acp}"]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - acp
 
-  adminer:
-    image: adminer:4
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     depends_on:
-      - postgres
+      db:
+        condition: service_healthy
+    # Pull AUTH_SECRET, ENCRYPTION_KEY, AI_MOCK, GITHUB_MOCK, WEBHOOK_ALLOW_PRIVATE,
+    # etc. from .env. DATABASE_URL is overridden below so it points at the `db`
+    # service instead of the localhost value used for host-based development.
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-acp}:${POSTGRES_PASSWORD:-acp}@db:5432/${POSTGRES_DB:-acp}?schema=public
+      API_PORT: "4000"
+    ports:
+      - "4000:4000"
+    healthcheck:
+      # Node 22 ships a global fetch; hit the public /api/health endpoint.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "fetch('http://127.0.0.1:4000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks:
+      - acp
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # The Next.js server proxies same-origin /api/* to the api service. This is
+      # read at server runtime by next.config.mjs (see apps/web/next.config.mjs).
+      NEXT_PUBLIC_API_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    networks:
+      - acp
 
 volumes:
   pgdata:
+
+networks:
+  acp:
+    driver: bridge
