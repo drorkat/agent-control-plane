@@ -44,6 +44,8 @@ export type RunEventType =
   | 'APPROVAL_REJECTED'
   | 'TOOL_BLOCKED'
   | 'TOOL_EXECUTED'
+  | 'TOOL_REQUESTED'
+  | 'TOOL_RESULT'
   | 'CONTEXT_READ'
   | 'CHANGES_PROPOSED'
   | 'RUN_COMPLETED'
@@ -95,6 +97,8 @@ const EVENT_LABEL_KEYS: Record<RunEventType, TranslationKey> = {
   APPROVAL_REJECTED: 'runs.event.APPROVAL_REJECTED',
   TOOL_BLOCKED: 'runs.event.TOOL_BLOCKED',
   TOOL_EXECUTED: 'runs.event.TOOL_EXECUTED',
+  TOOL_REQUESTED: 'runs.event.TOOL_REQUESTED',
+  TOOL_RESULT: 'runs.event.TOOL_RESULT',
   CONTEXT_READ: 'runs.event.CONTEXT_READ',
   CHANGES_PROPOSED: 'runs.event.CHANGES_PROPOSED',
   RUN_COMPLETED: 'runs.event.RUN_COMPLETED',
@@ -125,9 +129,34 @@ export function runEventTone(type: string): 'neutral' | 'primary' | 'success' | 
     case 'RUN_CREATED':
     case 'APPROVAL_REQUESTED':
     case 'CONTEXT_READ':
+    case 'TOOL_REQUESTED':
+    case 'TOOL_RESULT':
     default:
       return 'neutral';
   }
+}
+
+/**
+ * A concise, human-facing detail for a TOOL_REQUESTED / TOOL_RESULT event
+ * (e.g. "read_file · src/index.ts", "4 files", "1 file"). Returns null for
+ * other event types. Read defensively from the payload.
+ */
+export function toolDetailFromEvent(event: RunEvent): string | null {
+  if (event.type !== 'TOOL_REQUESTED' && event.type !== 'TOOL_RESULT') {
+    return null;
+  }
+  const p = event.payload ?? {};
+  const tool = typeof p.tool === 'string' ? p.tool : '';
+  if (event.type === 'TOOL_REQUESTED') {
+    const path = typeof p.path === 'string' ? p.path : '';
+    return path ? `${tool} · ${path}` : tool || null;
+  }
+  // TOOL_RESULT: summarize the outcome by tool.
+  if (typeof p.count === 'number') return `${p.count} files`;
+  if (typeof p.chars === 'number') return `${p.chars} chars`;
+  if (typeof p.fileCount === 'number') return `${p.fileCount} file(s)`;
+  if (p.found === false) return 'not found';
+  return tool || null;
 }
 
 /**
@@ -167,6 +196,8 @@ export function contextReadFromEvent(
 export interface ProposedFileChange {
   path: string;
   content: string;
+  /** The file's original content, when the agent read it — enables a diff. */
+  previousContent?: string;
 }
 
 /**
@@ -198,7 +229,12 @@ export function proposedChangesFromEvents(
     const path = (entry as Record<string, unknown>).path;
     if (typeof path !== 'string') continue;
     const content = (entry as Record<string, unknown>).content;
-    files.push({ path, content: typeof content === 'string' ? content : '' });
+    const previous = (entry as Record<string, unknown>).previousContent;
+    files.push({
+      path,
+      content: typeof content === 'string' ? content : '',
+      ...(typeof previous === 'string' ? { previousContent: previous } : {}),
+    });
   }
   return { summary, files };
 }

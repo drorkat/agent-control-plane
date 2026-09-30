@@ -48,6 +48,7 @@ import {
   collectFailureMessage,
   collectModelOutput,
   contextReadFromEvent,
+  toolDetailFromEvent,
   formatCost,
   formatDateTime,
   formatDuration,
@@ -455,6 +456,7 @@ function TimelineItem({
     event.type === 'RUN_FAILED' && typeof rawMessage === 'string' ? rawMessage : null;
   const pullRequestUrl = pullRequestUrlFromEvent(event);
   const contextRead = contextReadFromEvent(event);
+  const toolDetail = toolDetailFromEvent(event);
 
   return (
     <li className="relative flex gap-3 ps-6">
@@ -484,6 +486,11 @@ function TimelineItem({
         {contextRead && (
           <p className="mt-1 text-sm text-muted-foreground">
             {t('runs.context.readFiles', { count: contextRead.filesRead })}
+          </p>
+        )}
+        {toolDetail && (
+          <p dir="ltr" className="mt-1 font-mono text-xs text-muted-foreground">
+            {toolDetail}
           </p>
         )}
         {pullRequestUrl && (

@@ -508,11 +508,14 @@ const en = {
   // ── run proposed changes (real agent) ────────────────────────────────────
   'runs.event.CHANGES_PROPOSED': 'Changes proposed',
   'runs.event.CONTEXT_READ': 'Repository read',
+  'runs.event.TOOL_REQUESTED': 'Tool requested',
+  'runs.event.TOOL_RESULT': 'Tool result',
   'runs.changes.title': 'Proposed changes',
   'runs.changes.desc': 'The file changes the agent proposes for this task.',
   'runs.changes.summary': 'Summary',
   'runs.changes.filesChanged': '{count} file(s) changed',
   'runs.changes.file': 'File',
+  'runs.changes.newFile': 'New file',
   'runs.changes.empty': 'No file changes were proposed.',
   'runs.context.readFiles': 'Read {count} file(s) from the repository',
 };
@@ -1018,11 +1021,14 @@ const he: Record<TranslationKey, string> = {
   // ── run proposed changes (real agent) ────────────────────────────────────
   'runs.event.CHANGES_PROPOSED': 'הוצעו שינויים',
   'runs.event.CONTEXT_READ': 'המאגר נקרא',
+  'runs.event.TOOL_REQUESTED': 'בקשת כלי',
+  'runs.event.TOOL_RESULT': 'תוצאת כלי',
   'runs.changes.title': 'שינויים מוצעים',
   'runs.changes.desc': 'שינויי הקבצים שהסוכן מציע עבור משימה זו.',
   'runs.changes.summary': 'תקציר',
   'runs.changes.filesChanged': '{count} קבצים שונו',
   'runs.changes.file': 'קובץ',
+  'runs.changes.newFile': 'קובץ חדש',
   'runs.changes.empty': 'לא הוצעו שינויי קבצים.',
   'runs.context.readFiles': 'נקראו {count} קבצים מהמאגר',
 };
