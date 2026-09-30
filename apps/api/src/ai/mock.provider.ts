@@ -76,24 +76,26 @@ function buildLoopAction(prompt: string): string {
     }
   }
 
-  // Final step: propose editing the first context file, appending a marker line.
+  // Final step: propose a real multi-file change — edit the first context file
+  // (a modification, so the run shows a diff) AND create a new file (shown with
+  // a "New file" badge). This exercises the multi-file diff end to end.
   const target = firstMarkedFile(prompt);
-  if (!target) {
-    return JSON.stringify({
-      tool: 'propose_changes',
-      summary: 'Add an Agent Control Plane note',
-      files: [
-        {
-          path: 'acp/NOTES.md',
-          content: '# Notes\n\nUpdated by an Agent Control Plane agent (mock).\n',
-        },
-      ],
-    });
+  const files: { path: string; content: string }[] = [];
+  if (target) {
+    files.push({ path: target.path, content: target.content + trailerFor(target.path) });
   }
+  files.push({
+    path: 'docs/agent-notes.md',
+    content:
+      '# Agent notes\n\nThis file was created by an Agent Control Plane agent (mock)\n' +
+      'to demonstrate real multi-file edits.\n',
+  });
   return JSON.stringify({
     tool: 'propose_changes',
-    summary: `Apply the requested change to ${target.path}`,
-    files: [{ path: target.path, content: target.content + trailerFor(target.path) }],
+    summary: target
+      ? `Update ${target.path} and add docs/agent-notes.md`
+      : 'Add docs/agent-notes.md',
+    files,
   });
 }
 

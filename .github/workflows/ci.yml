@@ -1,0 +1,53 @@
+# Continuous integration for Agent Control Plane.
+#
+# Type-checks, builds, and runs the API's unit-test suite on every push and pull
+# request targeting `main`. The unit tests are pure (no database, no network),
+# so this workflow deliberately runs no service containers (e.g. no Postgres).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the repository.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node 22 (matches .nvmrc and the root package.json `engines` field), with
+      # npm's cache keyed off the lockfile for faster installs.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Install exactly what the lockfile pins, across all npm workspaces.
+      - name: Install dependencies
+        run: npm ci
+
+      # Generate the Prisma client so the API's TypeScript type-checks and builds.
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      # Type-check both apps without emitting any output.
+      - name: Type-check API
+        run: npx tsc -p apps/api/tsconfig.json --noEmit
+      - name: Type-check web
+        run: npx tsc -p apps/web/tsconfig.json --noEmit
+
+      # Build both apps (nest build + next build). Neither step needs a database:
+      # the web app reads NEXT_PUBLIC_API_URL at runtime, not at build time.
+      - name: Build
+        run: npm run build
+
+      # Run the API's unit-test suite (Jest + ts-jest).
+      - name: Test (API)
+        run: npm run test -w @acp/api

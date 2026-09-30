@@ -30,6 +30,7 @@ model Organization {
   webhooks            Webhook[]
   notifications       Notification[]
   invitations         Invitation[]
+  schedules           Schedule[]
 }
 
 model User {
@@ -236,6 +237,30 @@ model WebhookDelivery {
   webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
   @@index([webhookId])
+}
+
+// A recurring, automated run: every `intervalMinutes` the scheduler starts a run
+// of `taskId` (using `agentId`, or the task's assigned agent). This is the
+// automation primitive — an agent that works on a schedule without a human
+// clicking "Run". Governance still applies: a scheduled run is gated by the Tool
+// Gateway exactly like a manual one.
+model Schedule {
+  id              String    @id @default(uuid())
+  organizationId  String
+  taskId          String
+  agentId         String? // optional override; falls back to the task's assigned agent
+  name            String?
+  intervalMinutes Int
+  active          Boolean   @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([active])
 }
 
 // A pending invitation to join an organization. The invitee opens the link

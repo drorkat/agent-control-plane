@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   Activity,
   Bot,
+  CalendarClock,
   FolderKanban,
   LayoutDashboard,
   ListTodo,
@@ -34,6 +35,7 @@ const NAV: NavItem[] = [
   { labelKey: 'nav.runs', href: '/runs', icon: Activity },
   { labelKey: 'nav.approvals', href: '/approvals', icon: ShieldCheck },
   { labelKey: 'nav.audit', href: '/audit', icon: ScrollText },
+  { labelKey: 'nav.automation', href: '/automation', icon: CalendarClock },
   { labelKey: 'nav.team', href: '/team', icon: Users },
   { labelKey: 'nav.settings', href: '/settings', icon: Settings },
 ];
