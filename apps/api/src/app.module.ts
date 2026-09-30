@@ -7,6 +7,9 @@ import { TasksModule } from './tasks/tasks.module';
 import { ProvidersModule } from './providers/providers.module';
 import { AiModule } from './ai/ai.module';
 import { RunsModule } from './runs/runs.module';
+import { GatewayModule } from './gateway/gateway.module';
+import { AuditModule } from './audit/audit.module';
+import { ApprovalsModule } from './approvals/approvals.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -17,8 +20,11 @@ import { HealthController } from './health/health.controller';
     AgentsModule,
     TasksModule,
     ProvidersModule,
+    GatewayModule,
+    AuditModule,
     AiModule,
     RunsModule,
+    ApprovalsModule,
   ],
   controllers: [HealthController],
 })

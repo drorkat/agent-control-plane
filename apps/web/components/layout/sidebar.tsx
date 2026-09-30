@@ -8,6 +8,7 @@ import {
   FolderKanban,
   LayoutDashboard,
   ListTodo,
+  ScrollText,
   Settings,
   ShieldCheck,
   type LucideIcon,
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
   { labelKey: 'nav.tasks', href: '/tasks', icon: ListTodo },
   { labelKey: 'nav.runs', href: '/runs', icon: Activity },
   { labelKey: 'nav.approvals', href: '/approvals', icon: ShieldCheck, badge: '3' },
+  { labelKey: 'nav.audit', href: '/audit', icon: ScrollText },
   { labelKey: 'nav.settings', href: '/settings', icon: Settings },
 ];
 
