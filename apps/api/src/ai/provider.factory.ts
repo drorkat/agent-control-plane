@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { decryptSecret } from '../common/crypto';
 import { AIProvider } from './provider.interface';
 import { MockProvider } from './mock.provider';
@@ -46,7 +46,7 @@ export class ProviderFactory {
     // Read the newest credential for this provider. This query intentionally
     // reads the encrypted fields so we can decrypt below; nothing else does.
     const credential = await this.prisma.providerCredential.findFirst({
-      where: { organizationId: DEFAULT_ORG_ID, provider: agent.provider },
+      where: { organizationId: currentOrgId(), provider: agent.provider },
       orderBy: { createdAt: 'desc' },
       select: { ciphertext: true, iv: true, authTag: true },
     });

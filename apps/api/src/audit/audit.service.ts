@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 
 /**
  * Input to {@link AuditService.record}. `metadata` must contain only safe,
@@ -29,7 +29,7 @@ export class AuditService {
   record(input: AuditRecordInput) {
     return this.prisma.auditLog.create({
       data: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         actorType: input.actorType,
         actorId: input.actorId ?? null,
         action: input.action,
@@ -43,7 +43,7 @@ export class AuditService {
   /** All audit entries for the default org, newest first. */
   findAll() {
     return this.prisma.auditLog.findMany({
-      where: { organizationId: DEFAULT_ORG_ID },
+      where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
     });
   }

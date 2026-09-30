@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 
@@ -21,14 +21,14 @@ export class ProjectsService {
 
   findAll() {
     return this.prisma.project.findMany({
-      where: { organizationId: DEFAULT_ORG_ID },
+      where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string) {
     const project = await this.prisma.project.findFirst({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+      where: { id, organizationId: currentOrgId() },
     });
     if (!project) {
       throw new NotFoundException(`Project "${id}" not found`);
@@ -39,7 +39,7 @@ export class ProjectsService {
   create(dto: CreateProjectDto) {
     return this.prisma.project.create({
       data: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         name: dto.name.trim(),
         description: normalizeOptional(dto.description),
         repoUrl: normalizeOptional(dto.repoUrl),

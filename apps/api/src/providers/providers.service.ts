@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { encryptSecret, last4 } from '../common/crypto';
 import { CreateProviderDto } from './dto/create-provider.dto';
 
@@ -50,7 +50,7 @@ export class ProvidersService {
    */
   findAll(): Promise<ProviderCredentialView[]> {
     return this.prisma.providerCredential.findMany({
-      where: { organizationId: DEFAULT_ORG_ID },
+      where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
       select: SAFE_SELECT,
     });
@@ -66,7 +66,7 @@ export class ProvidersService {
 
     return this.prisma.providerCredential.create({
       data: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         provider: dto.provider,
         label: normalizeOptional(dto.label),
         ciphertext,
@@ -85,7 +85,7 @@ export class ProvidersService {
    */
   async remove(id: string): Promise<void> {
     const existing = await this.prisma.providerCredential.findFirst({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+      where: { id, organizationId: currentOrgId() },
       select: { id: true },
     });
     if (!existing) {

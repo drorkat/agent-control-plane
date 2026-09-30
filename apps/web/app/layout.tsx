@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import { AuthProvider } from '@/lib/auth/context';
 import { LanguageProvider } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 
@@ -50,7 +51,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: langScript }} />
       </head>
       <body className={cn('min-h-screen bg-background font-sans text-foreground antialiased')}>
-        <LanguageProvider>{children}</LanguageProvider>
+        <LanguageProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

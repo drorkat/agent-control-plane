@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
@@ -27,7 +27,7 @@ export class TasksService {
   findAll(filters: { projectId?: string; status?: string } = {}) {
     return this.prisma.task.findMany({
       where: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         ...(filters.projectId ? { projectId: filters.projectId } : {}),
         ...(filters.status ? { status: filters.status } : {}),
       },
@@ -38,7 +38,7 @@ export class TasksService {
   /** A single task scoped to the default org, or 404. */
   async findOne(id: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+      where: { id, organizationId: currentOrgId() },
     });
     if (!task) {
       throw new NotFoundException(`Task "${id}" not found`);
@@ -56,7 +56,7 @@ export class TasksService {
 
     return this.prisma.task.create({
       data: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         projectId: dto.projectId,
         title: dto.title.trim(),
         description: normalizeOptional(dto.description),
@@ -103,7 +103,7 @@ export class TasksService {
   /** Throw unless `projectId` is a project in the default org. */
   private async assertProjectInOrg(projectId: string): Promise<void> {
     const project = await this.prisma.project.findFirst({
-      where: { id: projectId, organizationId: DEFAULT_ORG_ID },
+      where: { id: projectId, organizationId: currentOrgId() },
       select: { id: true },
     });
     if (!project) {
@@ -114,7 +114,7 @@ export class TasksService {
   /** Throw unless `agentId` is an agent in the default org. */
   private async assertAgentInOrg(agentId: string): Promise<void> {
     const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, organizationId: DEFAULT_ORG_ID },
+      where: { id: agentId, organizationId: currentOrgId() },
       select: { id: true },
     });
     if (!agent) {

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { RunsService } from '../runs/runs.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -33,7 +33,7 @@ export class ApprovalsService {
   async findAll(status?: string) {
     const approvals = await this.prisma.approval.findMany({
       where: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         ...(status ? { status } : {}),
       },
       orderBy: { requestedAt: 'desc' },
@@ -49,7 +49,7 @@ export class ApprovalsService {
 
     const runs = runIds.length
       ? await this.prisma.run.findMany({
-          where: { id: { in: runIds }, organizationId: DEFAULT_ORG_ID },
+          where: { id: { in: runIds }, organizationId: currentOrgId() },
           select: {
             id: true,
             status: true,
@@ -143,7 +143,7 @@ export class ApprovalsService {
     actionType: string;
   }> {
     const approval = await this.prisma.approval.findFirst({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+      where: { id, organizationId: currentOrgId() },
     });
     if (!approval) {
       throw new NotFoundException(`Approval "${id}" not found`);

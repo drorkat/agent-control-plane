@@ -1,10 +1,112 @@
 'use client';
 
-import { Bell, ChevronDown, Menu, Search } from 'lucide-react';
+import * as React from 'react';
+import { Bell, ChevronDown, LogOut, Menu, Search } from 'lucide-react';
+import { useAuth, type AuthUser } from '@/lib/auth/context';
 import { useI18n, type Lang } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 import { Logo } from './logo';
 import { ThemeToggle } from './theme-toggle';
+
+/** Up-to-two-letter initials from a display name, falling back to the email. */
+function initialsOf(name: string | null, email: string): string {
+  const source = (name && name.trim()) || email;
+  const parts = source.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** Humanize a raw role enum (e.g. "ADMIN" → "Admin", "owner" → "Owner"). */
+function humanizeRole(role: string): string {
+  if (!role) return '';
+  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+}
+
+/** The signed-in user's avatar, name/role, and a logout dropdown. */
+function UserMenu({ user }: { user: AuthUser }) {
+  const { t } = useI18n();
+  const { logout } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const displayName = (user.name && user.name.trim()) || user.email;
+  const initials = initialsOf(user.name, user.email);
+  const role = humanizeRole(user.role);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-lg p-1 pe-1.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:pe-2"
+      >
+        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-gradient-to-br from-primary to-violet-500 text-xs font-semibold text-white ring-1 ring-inset ring-white/15">
+          {initials}
+        </span>
+        <span className="hidden max-w-[10rem] text-start leading-tight sm:block">
+          <span className="block truncate text-sm font-medium text-foreground">{displayName}</span>
+          {role && <span className="block truncate text-[11px] text-muted-foreground">{role}</span>}
+        </span>
+        <ChevronDown
+          className={cn(
+            'hidden size-4 text-muted-foreground transition-transform sm:block',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label={displayName}
+          className="absolute end-0 top-full z-40 mt-2 w-60 origin-top overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg animate-fade-in"
+        >
+          <div className="border-b border-border px-3 py-2.5">
+            <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
+            <p className="truncate text-xs text-muted-foreground" dir="ltr">
+              {user.email}
+            </p>
+          </div>
+          <div className="p-1">
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                void logout();
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-start text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:bg-accent"
+            >
+              <LogOut className="size-4 shrink-0 text-muted-foreground rtl:-scale-x-100" />
+              {t('auth.logout')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const iconButton =
   'inline-flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground ' +
@@ -50,6 +152,7 @@ function LanguageToggle() {
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const { t } = useI18n();
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
@@ -95,20 +198,8 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
           <span className="absolute end-2 top-2 size-1.5 rounded-full bg-primary ring-2 ring-background" />
         </button>
 
-        {/* Placeholder user menu */}
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-lg p-1 pe-1.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:pe-2"
-        >
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-gradient-to-br from-primary to-violet-500 text-xs font-semibold text-white ring-1 ring-inset ring-white/15">
-            AR
-          </span>
-          <span className="hidden text-start leading-tight sm:block">
-            <span className="block text-sm font-medium text-foreground">Alex Rivera</span>
-            <span className="block text-[11px] text-muted-foreground">{t('topbar.admin')}</span>
-          </span>
-          <ChevronDown className="hidden size-4 text-muted-foreground sm:block" />
-        </button>
+        {/* Real user menu (only when signed in) */}
+        {user && <UserMenu user={user} />}
       </div>
     </header>
   );

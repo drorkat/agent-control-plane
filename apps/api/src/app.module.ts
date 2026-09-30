@@ -10,12 +10,15 @@ import { RunsModule } from './runs/runs.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { AuditModule } from './audit/audit.module';
 import { ApprovalsModule } from './approvals/approvals.module';
+import { AuthModule } from './auth/auth.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
     PrismaModule,
     CommonModule,
+    AuthModule,
     ProjectsModule,
     AgentsModule,
     TasksModule,
@@ -25,6 +28,7 @@ import { HealthController } from './health/health.controller';
     AiModule,
     RunsModule,
     ApprovalsModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
 })

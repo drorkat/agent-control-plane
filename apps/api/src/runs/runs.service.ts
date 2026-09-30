@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { ProviderFactory } from '../ai/provider.factory';
 import { computeCostUsd } from '../ai/pricing';
 import { GatewayService } from '../gateway/gateway.service';
@@ -36,7 +36,7 @@ export class RunsService {
    */
   async start(taskId: string, agentIdOverride?: string) {
     const task = await this.prisma.task.findFirst({
-      where: { id: taskId, organizationId: DEFAULT_ORG_ID },
+      where: { id: taskId, organizationId: currentOrgId() },
     });
     if (!task) {
       throw new NotFoundException(`Task "${taskId}" not found`);
@@ -48,7 +48,7 @@ export class RunsService {
     }
 
     const agent = await this.prisma.agent.findFirst({
-      where: { id: agentId, organizationId: DEFAULT_ORG_ID },
+      where: { id: agentId, organizationId: currentOrgId() },
     });
     if (!agent) {
       throw new NotFoundException(`Agent "${agentId}" not found`);
@@ -56,7 +56,7 @@ export class RunsService {
 
     const run = await this.prisma.run.create({
       data: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         taskId: task.id,
         agentId: agent.id,
         provider: agent.provider,
@@ -130,7 +130,7 @@ export class RunsService {
         // via the approvals API, which then calls resume().
         const approval = await this.prisma.approval.create({
           data: {
-            organizationId: DEFAULT_ORG_ID,
+            organizationId: currentOrgId(),
             runId: run.id,
             actionType: action,
             riskLevel: risk,
@@ -211,7 +211,7 @@ export class RunsService {
    */
   async resume(runId: string, approved: boolean, resolvedByUserId?: string) {
     const run = await this.prisma.run.findFirst({
-      where: { id: runId, organizationId: DEFAULT_ORG_ID },
+      where: { id: runId, organizationId: currentOrgId() },
     });
     if (!run) {
       throw new NotFoundException(`Run "${runId}" not found`);
@@ -274,7 +274,7 @@ export class RunsService {
   /** All runs in the default org, newest first, with agent/task summaries. */
   findAll() {
     return this.prisma.run.findMany({
-      where: { organizationId: DEFAULT_ORG_ID },
+      where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
       include: {
         agent: { select: { id: true, name: true } },
@@ -286,7 +286,7 @@ export class RunsService {
   /** A single run scoped to the default org (404), with its events in order. */
   async findOne(id: string) {
     const run = await this.prisma.run.findFirst({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+      where: { id, organizationId: currentOrgId() },
       include: {
         events: { orderBy: { createdAt: 'asc' } },
         agent: { select: { id: true, name: true } },

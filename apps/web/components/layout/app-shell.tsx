@@ -1,20 +1,46 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/context';
 import { useI18n } from '@/lib/i18n/context';
 import { cn } from '@/lib/utils';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 
+/** Full-viewport centered spinner, shown while auth resolves or redirects. */
+function AuthLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden />
+    </div>
+  );
+}
+
 /**
  * The application frame: a fixed sidebar on desktop, a slide-in drawer on
  * mobile, a sticky topbar, and a scrolling content area.
+ *
+ * Also the client-side auth gate: while the session is being checked it shows
+ * a spinner, and signed-out visitors are redirected to `/login` (the login
+ * and signup pages are standalone and do not use this shell, so they are not
+ * gated).
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
 
   const closeDrawer = React.useCallback(() => setDrawerOpen(false), []);
+
+  // Redirect to the login page once we know the visitor is signed out.
+  React.useEffect(() => {
+    if (!loading && user === null) {
+      router.replace('/login');
+    }
+  }, [loading, user, router]);
 
   // Close the drawer on Escape, and lock body scroll while it is open.
   React.useEffect(() => {
@@ -30,6 +56,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       document.body.style.overflow = previousOverflow;
     };
   }, [drawerOpen]);
+
+  // While the session is resolving, or while we redirect a signed-out
+  // visitor, render only a spinner (never the app chrome or its data).
+  if (loading || user === null) {
+    return <AuthLoading />;
+  }
 
   return (
     <div className="flex min-h-screen bg-background">

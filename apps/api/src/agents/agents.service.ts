@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_ORG_ID } from '../common/tenant';
+import { currentOrgId } from '../common/tenant';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 
@@ -11,7 +11,7 @@ export class AgentsService {
   /** All agents in the default org, newest first. */
   findAll() {
     return this.prisma.agent.findMany({
-      where: { organizationId: DEFAULT_ORG_ID },
+      where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -19,7 +19,7 @@ export class AgentsService {
   /** A single agent scoped to the default org, or 404. */
   async findOne(id: string) {
     const agent = await this.prisma.agent.findFirst({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+      where: { id, organizationId: currentOrgId() },
     });
     if (!agent) {
       throw new NotFoundException(`Agent ${id} not found`);
@@ -30,7 +30,7 @@ export class AgentsService {
   create(dto: CreateAgentDto) {
     return this.prisma.agent.create({
       data: {
-        organizationId: DEFAULT_ORG_ID,
+        organizationId: currentOrgId(),
         name: dto.name,
         provider: dto.provider,
         model: dto.model,
