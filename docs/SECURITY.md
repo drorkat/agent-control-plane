@@ -10,6 +10,9 @@
 - Rate limiting (global + strict on auth), helmet security headers, CORS allowlist,
   `Secure` session cookie in production.
 - Structured JSON logs that never include credentials; Prometheus `/metrics`.
+- Tenant isolation enforced in the app (every query is org-scoped), with optional
+  Postgres row-level security as a database-level backstop (`npm run db:rls`; see
+  [RLS.md](./RLS.md)).
 
 ## Dependency audit
 

@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { SchedulerService } from '../src/schedules/scheduler.service';
+import { applyRls, RLS_ORG_GUC } from '../src/prisma/rls';
 
 /**
  * Integration tests against the real Nest app wired to a real Postgres (a
@@ -38,6 +39,12 @@ describe('ACP API (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     server = app.getHttpServer();
+
+    // Install row-level security on the test database. Because the policy is
+    // permissive when the org GUC is unset (and the app never sets it), the whole
+    // existing suite below must still pass — that is the non-breaking proof. The
+    // dedicated RLS test sets the GUC to prove the policy blocks cross-tenant reads.
+    await applyRls(prisma);
   });
 
   afterAll(async () => {
@@ -311,6 +318,81 @@ describe('ACP API (e2e)', () => {
         .post('/api/schedules')
         .send({ taskId: task.id, intervalMinutes: 5 })
         .expect(400);
+    });
+  });
+
+  describe('row-level security (defense-in-depth)', () => {
+    it('blocks cross-tenant reads at the database when the org GUC is set', async () => {
+      // Seed two orgs with a project each directly — this is a database-level
+      // test, so it deliberately avoids the (rate-limited) HTTP signup path.
+      const orgA = await prisma.organization.create({
+        data: { name: 'RLS Org A', slug: `rls-a-${uniq()}` },
+      });
+      const orgB = await prisma.organization.create({
+        data: { name: 'RLS Org B', slug: `rls-b-${uniq()}` },
+      });
+      await prisma.project.create({
+        data: { organizationId: orgA.id, name: 'RLS-A' },
+      });
+      await prisma.project.create({
+        data: { organizationId: orgB.id, name: 'RLS-B' },
+      });
+
+      // Without the org GUC the policy is permissive — which is how the app runs
+      // by default, and why enabling RLS did not break the suite above: a raw read
+      // still sees every org's rows.
+      const all = await prisma.$queryRawUnsafe<{ organizationId: string }[]>(
+        'SELECT "organizationId" FROM "Project"',
+      );
+      const allIds = all.map((r) => r.organizationId);
+      expect(allIds).toEqual(expect.arrayContaining([orgA.id, orgB.id]));
+
+      // Superusers bypass RLS, so to evaluate the policy we need a non-superuser
+      // context. Locally the app role is already non-super (+ FORCE applies to the
+      // owner); on the Docker/CI Postgres the app role is a superuser, so create a
+      // throwaway non-super role and SET LOCAL ROLE to it inside the probe tx.
+      const roleRows = await prisma.$queryRawUnsafe<{ rolsuper: boolean }[]>(
+        'SELECT rolsuper FROM pg_roles WHERE rolname = current_user',
+      );
+      const isSuper = roleRows[0]?.rolsuper === true;
+      if (isSuper) {
+        await prisma.$executeRawUnsafe(
+          `DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='acp_rls_probe') THEN CREATE ROLE acp_rls_probe NOSUPERUSER; END IF; END $$;`,
+        );
+        await prisma.$executeRawUnsafe(
+          'GRANT USAGE ON SCHEMA public TO acp_rls_probe',
+        );
+        await prisma.$executeRawUnsafe(
+          'GRANT SELECT ON ALL TABLES IN SCHEMA public TO acp_rls_probe',
+        );
+      }
+
+      // Read "Project" scoped to one org via the GUC, under a non-super role, all
+      // in one transaction so SET LOCAL ROLE + set_config bind to the same
+      // connection as the SELECT.
+      const projectOrgsSeenBy = (orgId: string): Promise<string[]> =>
+        prisma.$transaction(async (tx) => {
+          if (isSuper) {
+            await tx.$executeRawUnsafe('SET LOCAL ROLE acp_rls_probe');
+          }
+          await tx.$executeRawUnsafe(
+            'SELECT set_config($1, $2, true)',
+            RLS_ORG_GUC,
+            orgId,
+          );
+          const rows = await tx.$queryRawUnsafe<{ organizationId: string }[]>(
+            'SELECT "organizationId" FROM "Project"',
+          );
+          return rows.map((r) => r.organizationId);
+        });
+
+      const seenByA = await projectOrgsSeenBy(orgA.id);
+      expect(seenByA).toContain(orgA.id);
+      expect(seenByA).not.toContain(orgB.id); // the DB refused org B's row
+
+      const seenByB = await projectOrgsSeenBy(orgB.id);
+      expect(seenByB).toContain(orgB.id);
+      expect(seenByB).not.toContain(orgA.id);
     });
   });
 });

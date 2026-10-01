@@ -158,12 +158,17 @@ connected through the UI with a token that is encrypted at rest.
   every request; the session is an httpOnly, SameSite=Lax cookie.
 - **Human-in-the-loop** — the tool gateway blocks or parks risky actions for a
   human before an agent can act.
+- **Row-level security (optional)** — `npm run db:rls -w @acp/api` installs
+  Postgres RLS policies on every tenant table as defense-in-depth beneath the
+  app's org-scoping; it is non-breaking to install and enforces once the app runs
+  as a non-superuser role (see [docs/RLS.md](./docs/RLS.md)).
 
 ## Documentation
 
 - [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) — self-hosting guide (Docker and manual/VM).
 - [docs/BACKUP.md](./docs/BACKUP.md) — backup & restore runbook (pg_dump/pg_restore, the encryption-key caveat, restore drills).
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — how the system fits together.
+- [docs/RLS.md](./docs/RLS.md) — Postgres row-level security (tenant defense-in-depth).
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — developing and contributing.
 
 ## License
