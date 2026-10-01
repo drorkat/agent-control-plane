@@ -132,6 +132,7 @@ Copy `.env.example` to `.env` and adjust. The variables the project reads:
 | `NEXT_PUBLIC_API_URL` | no | `http://localhost:4000` | Where the web server proxies `/api/*`. In Docker this is set to `http://api:4000`. |
 | `LOG_LEVEL` | no | `info` | pino log level (`trace`…`fatal`). Logs are structured JSON with a per-request id; metrics are at `GET /api/metrics` (Prometheus). |
 | `REDIS_URL` | no | — | Shared store for the rate limiter across multiple API replicas (e.g. `redis://redis:6379`). Unset = in-memory per-instance limit. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | — | OpenTelemetry OTLP/HTTP collector URL to export traces to. Unset = tracing off (no overhead). `OTEL_TRACING=1` prints spans to stdout for local debugging; when active, logs carry the `traceId`. |
 | `AI_MOCK` | no | `0` | `1` uses a built-in mock AI provider — no network, no key. |
 | `GITHUB_MOCK` | no | `0` | `1` uses a built-in mock GitHub client — no network, no token. |
 | `WEBHOOK_ALLOW_PRIVATE` | no | `0` | **Local dev only.** `1` allows webhooks to private/loopback/link-local addresses. Leave unset in production so SSRF protection stays on. |

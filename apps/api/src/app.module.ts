@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import Redis from 'ioredis';
 import { LoggerModule } from 'nestjs-pino';
+import { trace } from '@opentelemetry/api';
 import { PrismaModule } from './prisma/prisma.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { CommonModule } from './common/common.module';
@@ -53,6 +54,15 @@ import { HealthController } from './health/health.controller';
             'res.headers["set-cookie"]',
           ],
           remove: true,
+        },
+        // When tracing is active, stamp the current trace/span id onto every log
+        // line so logs and traces correlate. A no-op (returns {}) when tracing
+        // is disabled — getActiveSpan() is then undefined.
+        mixin() {
+          const span = trace.getActiveSpan();
+          if (!span) return {};
+          const { traceId, spanId } = span.spanContext();
+          return { traceId, spanId };
         },
       },
     }),

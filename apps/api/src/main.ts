@@ -1,4 +1,7 @@
 import './load-env';
+// Must come before Nest/http/express load so the OTel instrumentations can
+// patch them (no-op unless tracing is enabled — see tracing.ts).
+import './tracing';
 
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
