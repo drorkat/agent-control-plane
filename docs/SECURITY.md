@@ -14,26 +14,23 @@
 ## Dependency audit
 
 Run `npm audit` (all) or `npm audit --omit=dev` (what actually ships).
+**Current status: `npm audit` reports 0 vulnerabilities.**
 
-### Fixed
+### How it got there
 - **Password hashing moved from `bcrypt` to `bcryptjs`.** The native `bcrypt`
   pulled in `@mapbox/node-pre-gyp` → `tar`, which carried two *critical*
   production-tree advisories. `bcryptjs` is pure JS, produces the same `$2a/$2b`
   hashes (existing stored hashes still verify), and removes that whole chain.
+- **API upgraded to NestJS 11 (Express 5).** This replaced the vulnerable
+  `multer` / `body-parser` transitives and the Nest HTTP-stack advisories
+  (`@nestjs/core`/`common`, `file-type`). `@nestjs/cli` 11 also moved the
+  dev-only `webpack` (buildHttp SSRF) / `inquirer` / `tmp` / `picomatch`
+  advisories past their fixes. (Nest 11 rather than 12: `nestjs-pino` and
+  `@nest-lab/throttler-storage-redis` only peer-support up to `^11`, and
+  `@nestjs/schematics` 12 requires TypeScript ≥6 — 11 already carries Express 5.)
+- **Web upgraded to Next.js 16 + React 19**, clearing the `next` critical + high
+  advisories. `@playwright/test` bumped to 1.55.1 to clear a dev-only
+  browser-download SSL advisory.
 
-### Known / deferred (require a major framework upgrade)
-These remain in `npm audit` and are **not** safely fixable without a breaking
-major bump, so they are tracked rather than force-applied:
-
-| Advisory source | Severity | Why deferred / mitigation |
-| --- | --- | --- |
-| `next` (web) | critical + high | Already on the latest Next **14.x**; the advisories are fixed only in Next 15/16 (breaking — React 19 + async request APIs). Most concern features this app does not expose (Image Optimizer `remotePatterns`, i18n middleware, Server Actions on a custom server); the DoS ones are mitigated by running behind an ingress/CDN. Upgrade to Next 16 is the planned fix. |
-| `multer` (via `@nestjs/platform-express`) | high | **Dead code** — the app has no file-upload routes (`FileInterceptor`/multipart are unused), so the multer DoS paths are unreachable. Cleared by the Nest 11/12 upgrade. |
-| `body-parser` (via `@nestjs/platform-express`) | — | DoS via an invalid `limit`; the app sets a fixed JSON body-size limit. Cleared by the Nest upgrade. |
-| `@nestjs/core` / `@nestjs/common` / `file-type` | moderate | Transitive in the Nest HTTP stack; fixed by the Nest 11/12 upgrade. |
-| `webpack` (buildHttp SSRF), `inquirer`/`tmp`, `picomatch` (ReDoS) | high/moderate/low | **Dev/build tooling only** (via `@nestjs/cli`/schematics). Never shipped in the runtime image. Cleared by `@nestjs/cli` 12. |
-
-### Planned follow-ups
-- Upgrade **Next.js 14 → 16** (web) and **NestJS 10 → 12** (api). Both are
-  breaking major migrations and are intentionally out of scope for a patch-level
-  security pass; doing them clears every remaining advisory above.
+Both framework upgrades needed **no application source changes** and are covered
+by CI (unit, API integration, and browser E2E jobs).
