@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
+import { PaginationQuery, paginationArgs } from '../common/pagination';
 
 /**
  * Input to {@link AuditService.record}. `metadata` must contain only safe,
@@ -40,11 +41,12 @@ export class AuditService {
     });
   }
 
-  /** All audit entries for the default org, newest first. */
-  findAll() {
+  /** A page of audit entries for the default org, newest first. */
+  findAll(query: PaginationQuery = {}) {
     return this.prisma.auditLog.findMany({
       where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
+      ...paginationArgs(query),
     });
   }
 }

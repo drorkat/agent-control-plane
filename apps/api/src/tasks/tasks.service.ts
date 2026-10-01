@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
+import { PaginationQuery, paginationArgs } from '../common/pagination';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
@@ -23,8 +24,11 @@ function normalizeOptional(value: string | undefined | null): string | null {
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** All tasks in the default org, newest first, optionally filtered. */
-  findAll(filters: { projectId?: string; status?: string } = {}) {
+  /** A page of tasks in the default org, newest first, optionally filtered. */
+  findAll(
+    filters: { projectId?: string; status?: string } = {},
+    query: PaginationQuery = {},
+  ) {
     return this.prisma.task.findMany({
       where: {
         organizationId: currentOrgId(),
@@ -32,6 +36,7 @@ export class TasksService {
         ...(filters.status ? { status: filters.status } : {}),
       },
       orderBy: { createdAt: 'desc' },
+      ...paginationArgs(query),
     });
   }
 

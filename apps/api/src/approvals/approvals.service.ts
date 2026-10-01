@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
+import { PaginationQuery, paginationArgs } from '../common/pagination';
 import { RunsService } from '../runs/runs.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -30,13 +31,14 @@ export class ApprovalsService {
    * `run` field — producing the { ..., run: { id, status, agent, task } } shape
    * the UI relies on.
    */
-  async findAll(status?: string) {
+  async findAll(status?: string, query: PaginationQuery = {}) {
     const approvals = await this.prisma.approval.findMany({
       where: {
         organizationId: currentOrgId(),
         ...(status ? { status } : {}),
       },
       orderBy: { requestedAt: 'desc' },
+      ...paginationArgs(query),
     });
 
     const runIds = [

@@ -194,6 +194,19 @@ describe('ACP API (e2e)', () => {
     });
   });
 
+  describe('pagination', () => {
+    it('bounds a list to the requested limit', async () => {
+      const { agent } = await signupOwner();
+      await agent.post('/api/projects').send({ name: 'P1' }).expect(201);
+      await agent.post('/api/projects').send({ name: 'P2' }).expect(201);
+      await agent.post('/api/projects').send({ name: 'P3' }).expect(201);
+
+      const page = await agent.get('/api/projects?limit=2').expect(200);
+      expect(Array.isArray(page.body)).toBe(true);
+      expect(page.body.length).toBe(2);
+    });
+  });
+
   describe('scheduler validation', () => {
     it('rejects scheduling a task with no assignable agent', async () => {
       const { agent } = await signupOwner();

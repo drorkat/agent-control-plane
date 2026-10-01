@@ -13,6 +13,7 @@ import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { Roles } from '../auth/roles.decorator';
+import { PaginationQuery } from '../common/pagination';
 
 // Global prefix `api` is applied in main.ts, so these routes live at /api/tasks.
 // Reads open to any member; writes require member+ (viewers are read-only).
@@ -24,8 +25,9 @@ export class TasksController {
   findAll(
     @Query('projectId') projectId?: string,
     @Query('status') status?: string,
+    @Query() page: PaginationQuery = {},
   ) {
-    return this.tasks.findAll({ projectId, status });
+    return this.tasks.findAll({ projectId, status }, page);
   }
 
   @Post()

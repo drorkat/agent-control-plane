@@ -7,11 +7,13 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { Roles } from '../auth/roles.decorator';
+import { PaginationQuery } from '../common/pagination';
 
 // Reads are open to any member (incl. viewers); writes require member+ (viewers
 // are read-only).
@@ -20,8 +22,8 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  findAll() {
-    return this.projects.findAll();
+  findAll(@Query() page: PaginationQuery) {
+    return this.projects.findAll(page);
   }
 
   @Post()

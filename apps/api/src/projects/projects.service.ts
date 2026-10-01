@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
+import { PaginationQuery, paginationArgs } from '../common/pagination';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 
@@ -19,10 +20,11 @@ function normalizeOptional(value: string | undefined): string | null {
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll() {
+  findAll(query: PaginationQuery = {}) {
     return this.prisma.project.findMany({
       where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
+      ...paginationArgs(query),
     });
   }
 

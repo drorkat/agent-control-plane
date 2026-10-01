@@ -3,6 +3,7 @@ import { ApprovalsService } from './approvals.service';
 import { RejectDto } from './dto/reject.dto';
 import { Roles } from '../auth/roles.decorator';
 import { CurrentUser, type AuthUser } from '../auth/current-user.decorator';
+import { PaginationQuery } from '../common/pagination';
 
 // Global prefix `api` is applied in main.ts, so these routes live at
 // /api/approvals. Only owners/admins may resolve an approval, and the resolving
@@ -12,8 +13,11 @@ export class ApprovalsController {
   constructor(private readonly approvals: ApprovalsService) {}
 
   @Get()
-  findAll(@Query('status') status?: string) {
-    return this.approvals.findAll(status);
+  findAll(
+    @Query('status') status?: string,
+    @Query() page: PaginationQuery = {},
+  ) {
+    return this.approvals.findAll(status, page);
   }
 
   @Post(':id/approve')

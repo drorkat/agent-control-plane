@@ -16,6 +16,7 @@ import { RepoContextService } from './repo-context.service';
 import { ChangeProposal } from './change-proposal';
 import { buildAgentLoopSystemPrompt, runAgentLoop } from './agent-loop';
 import { OPEN_PR_ACTION, gatedActionForProposal } from './gated-action';
+import { PaginationQuery, paginationArgs } from '../common/pagination';
 import {
   WebhookDispatcher,
   WebhookEvent,
@@ -660,11 +661,12 @@ export class RunsService {
     return '';
   }
 
-  /** All runs in the default org, newest first, with agent/task summaries. */
-  findAll() {
+  /** A page of runs in the default org, newest first, with agent/task summaries. */
+  findAll(query: PaginationQuery = {}) {
     return this.prisma.run.findMany({
       where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
+      ...paginationArgs(query),
       include: {
         agent: { select: { id: true, name: true } },
         task: { select: { id: true, title: true } },

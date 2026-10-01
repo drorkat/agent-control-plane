@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
+import { PaginationQuery, paginationArgs } from '../common/pagination';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 
@@ -8,11 +9,12 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 export class AgentsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** All agents in the default org, newest first. */
-  findAll() {
+  /** A page of agents in the default org, newest first. */
+  findAll(query: PaginationQuery = {}) {
     return this.prisma.agent.findMany({
       where: { organizationId: currentOrgId() },
       orderBy: { createdAt: 'desc' },
+      ...paginationArgs(query),
     });
   }
 
