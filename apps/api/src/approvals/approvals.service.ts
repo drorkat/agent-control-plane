@@ -69,6 +69,16 @@ export class ApprovalsService {
     }));
   }
 
+  /** Total approvals matching the same status filter (for X-Total-Count). */
+  count(status?: string) {
+    return this.prisma.approval.count({
+      where: {
+        organizationId: currentOrgId(),
+        ...(status ? { status } : {}),
+      },
+    });
+  }
+
   /**
    * Approve a pending approval, then resume its run so the proposed action is
    * executed. The approval must be `pending` and linked to a run.

@@ -162,6 +162,7 @@ connected through the UI with a token that is encrypted at rest.
 ## Documentation
 
 - [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) — self-hosting guide (Docker and manual/VM).
+- [docs/BACKUP.md](./docs/BACKUP.md) — backup & restore runbook (pg_dump/pg_restore, the encryption-key caveat, restore drills).
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — how the system fits together.
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — developing and contributing.
 

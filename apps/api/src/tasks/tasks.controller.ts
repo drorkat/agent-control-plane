@@ -8,12 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { Roles } from '../auth/roles.decorator';
-import { PaginationQuery } from '../common/pagination';
+import { PaginationQuery, setTotalCount } from '../common/pagination';
 
 // Global prefix `api` is applied in main.ts, so these routes live at /api/tasks.
 // Reads open to any member; writes require member+ (viewers are read-only).
@@ -22,12 +24,19 @@ export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
   @Get()
-  findAll(
+  async findAll(
+    @Res({ passthrough: true }) res: Response,
     @Query('projectId') projectId?: string,
     @Query('status') status?: string,
     @Query() page: PaginationQuery = {},
   ) {
-    return this.tasks.findAll({ projectId, status }, page);
+    const filters = { projectId, status };
+    const [data, total] = await Promise.all([
+      this.tasks.findAll(filters, page),
+      this.tasks.count(filters),
+    ]);
+    setTotalCount(res, total);
+    return data;
   }
 
   @Post()

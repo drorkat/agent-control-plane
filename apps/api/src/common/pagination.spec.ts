@@ -1,8 +1,11 @@
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
+  TOTAL_COUNT_HEADER,
   paginationArgs,
+  setTotalCount,
 } from './pagination';
+import type { Response } from 'express';
 
 describe('paginationArgs', () => {
   it('defaults to the first page', () => {
@@ -24,5 +27,13 @@ describe('paginationArgs', () => {
 
   it('never returns a negative skip', () => {
     expect(paginationArgs({ offset: -5 }).skip).toBe(0);
+  });
+});
+
+describe('setTotalCount', () => {
+  it('sets the X-Total-Count header as a string', () => {
+    const setHeader = jest.fn();
+    setTotalCount({ setHeader } as unknown as Response, 42);
+    expect(setHeader).toHaveBeenCalledWith(TOTAL_COUNT_HEADER, '42');
   });
 });

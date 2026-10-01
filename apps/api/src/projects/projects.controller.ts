@@ -8,12 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { Roles } from '../auth/roles.decorator';
-import { PaginationQuery } from '../common/pagination';
+import { PaginationQuery, setTotalCount } from '../common/pagination';
 
 // Reads are open to any member (incl. viewers); writes require member+ (viewers
 // are read-only).
@@ -22,8 +24,16 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  findAll(@Query() page: PaginationQuery) {
-    return this.projects.findAll(page);
+  async findAll(
+    @Query() page: PaginationQuery,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const [data, total] = await Promise.all([
+      this.projects.findAll(page),
+      this.projects.count(),
+    ]);
+    setTotalCount(res, total);
+    return data;
   }
 
   @Post()

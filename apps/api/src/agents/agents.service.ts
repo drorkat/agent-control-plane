@@ -18,6 +18,13 @@ export class AgentsService {
     });
   }
 
+  /** Total agents in the default org (for the X-Total-Count header). */
+  count() {
+    return this.prisma.agent.count({
+      where: { organizationId: currentOrgId() },
+    });
+  }
+
   /** A single agent scoped to the default org, or 404. */
   async findOne(id: string) {
     const agent = await this.prisma.agent.findFirst({

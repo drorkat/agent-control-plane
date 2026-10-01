@@ -181,6 +181,10 @@ For the manual path use your host's `pg_dump` / `psql` against `DATABASE_URL`.
 The Docker `pgdata` named volume can also be snapshotted, but a logical
 `pg_dump` is the most portable.
 
+For the full procedure — custom-format dumps, `pg_restore`, restore drills,
+scheduling/retention, and the encryption-key caveat — see the
+[backup & restore runbook](./BACKUP.md).
+
 ## Troubleshooting
 
 - **API can't connect to the database.** Check `DATABASE_URL`. In Compose the

@@ -10,6 +10,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { assertSecureConfig } from './common/config';
+import { TOTAL_COUNT_HEADER } from './common/pagination';
 
 async function bootstrap() {
   // Fail fast if the session/encryption secrets are missing or default.
@@ -37,6 +38,9 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : false,
     credentials: true,
+    // Let cross-origin clients read the pagination total (same-origin callers
+    // can read it without this; it is only needed when WEB_ORIGIN is set).
+    exposedHeaders: [TOTAL_COUNT_HEADER],
   });
   app.use(cookieParser());
   app.setGlobalPrefix('api');

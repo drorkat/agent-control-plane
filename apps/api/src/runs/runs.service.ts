@@ -717,6 +717,13 @@ export class RunsService {
     });
   }
 
+  /** Total runs in the default org (for the X-Total-Count header). */
+  count() {
+    return this.prisma.run.count({
+      where: { organizationId: currentOrgId() },
+    });
+  }
+
   /** A single run scoped to the default org (404), with its events in order. */
   async findOne(id: string) {
     const run = await this.prisma.run.findFirst({

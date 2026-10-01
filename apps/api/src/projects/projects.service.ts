@@ -28,6 +28,13 @@ export class ProjectsService {
     });
   }
 
+  /** Total projects in the default org (for the X-Total-Count header). */
+  count() {
+    return this.prisma.project.count({
+      where: { organizationId: currentOrgId() },
+    });
+  }
+
   async findOne(id: string) {
     const project = await this.prisma.project.findFirst({
       where: { id, organizationId: currentOrgId() },

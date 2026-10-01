@@ -288,6 +288,10 @@ describe('ACP API (e2e)', () => {
       const page = await agent.get('/api/projects?limit=2').expect(200);
       expect(Array.isArray(page.body)).toBe(true);
       expect(page.body.length).toBe(2);
+      // The body is capped at the page size, but X-Total-Count reports the full
+      // filtered total (this fresh org has exactly 3 projects) so a client can
+      // page with a known total.
+      expect(page.headers['x-total-count']).toBe('3');
     });
   });
 

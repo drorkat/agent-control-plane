@@ -49,4 +49,11 @@ export class AuditService {
       ...paginationArgs(query),
     });
   }
+
+  /** Total audit entries in the default org (for the X-Total-Count header). */
+  count() {
+    return this.prisma.auditLog.count({
+      where: { organizationId: currentOrgId() },
+    });
+  }
 }

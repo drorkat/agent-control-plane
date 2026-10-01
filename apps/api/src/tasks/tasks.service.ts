@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentOrgId } from '../common/tenant';
 import { PaginationQuery, paginationArgs } from '../common/pagination';
@@ -24,20 +25,32 @@ function normalizeOptional(value: string | undefined | null): string | null {
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** The org-scoped `where` for list/count, shared so the two never drift. */
+  private whereFor(
+    filters: { projectId?: string; status?: string } = {},
+  ): Prisma.TaskWhereInput {
+    return {
+      organizationId: currentOrgId(),
+      ...(filters.projectId ? { projectId: filters.projectId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+    };
+  }
+
   /** A page of tasks in the default org, newest first, optionally filtered. */
   findAll(
     filters: { projectId?: string; status?: string } = {},
     query: PaginationQuery = {},
   ) {
     return this.prisma.task.findMany({
-      where: {
-        organizationId: currentOrgId(),
-        ...(filters.projectId ? { projectId: filters.projectId } : {}),
-        ...(filters.status ? { status: filters.status } : {}),
-      },
+      where: this.whereFor(filters),
       orderBy: { createdAt: 'desc' },
       ...paginationArgs(query),
     });
+  }
+
+  /** Total tasks matching the same filter (for the X-Total-Count header). */
+  count(filters: { projectId?: string; status?: string } = {}) {
+    return this.prisma.task.count({ where: this.whereFor(filters) });
   }
 
   /** A single task scoped to the default org, or 404. */

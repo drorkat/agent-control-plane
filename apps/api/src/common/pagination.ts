@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import type { Response } from 'express';
 
 /** Page size when the client doesn't ask for one. */
 export const DEFAULT_PAGE_SIZE = 50;
@@ -38,4 +39,17 @@ export function paginationArgs(query: PaginationQuery = {}): {
   );
   const skip = Math.max(Math.trunc(query.offset ?? 0), 0);
   return { take, skip };
+}
+
+/**
+ * Response header carrying the total number of rows matching a list query (the
+ * whole filtered set, not just the returned page). Clients paginate by reading
+ * it alongside their `limit`/`offset`. The response body stays a plain array, so
+ * this is purely additive — existing clients ignore the header.
+ */
+export const TOTAL_COUNT_HEADER = 'X-Total-Count';
+
+/** Stamp {@link TOTAL_COUNT_HEADER} onto a response (coerced to a string). */
+export function setTotalCount(res: Response, total: number): void {
+  res.setHeader(TOTAL_COUNT_HEADER, String(total));
 }

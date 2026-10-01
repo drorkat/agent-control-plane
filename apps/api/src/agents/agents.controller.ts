@@ -8,12 +8,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AgentsService } from './agents.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 import { Roles } from '../auth/roles.decorator';
-import { PaginationQuery } from '../common/pagination';
+import { PaginationQuery, setTotalCount } from '../common/pagination';
 
 // Global prefix `api` is applied in main.ts, so these routes live at /api/agents.
 // Reads open to any member; writes require member+ (viewers are read-only).
@@ -22,8 +24,16 @@ export class AgentsController {
   constructor(private readonly agents: AgentsService) {}
 
   @Get()
-  findAll(@Query() page: PaginationQuery) {
-    return this.agents.findAll(page);
+  async findAll(
+    @Query() page: PaginationQuery,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const [data, total] = await Promise.all([
+      this.agents.findAll(page),
+      this.agents.count(),
+    ]);
+    setTotalCount(res, total);
+    return data;
   }
 
   @Post()
