@@ -10,7 +10,18 @@ import {
  * (SHA-256) from ENCRYPTION_KEY (falling back to AUTH_SECRET). The plaintext
  * key is only ever decrypted at tool-execution time and never logged, stored,
  * or returned by the API.
+ *
+ * Key rotation: new secrets are always encrypted under the current key, but
+ * {@link decryptSecret} also accepts ENCRYPTION_KEY_OLD as a fallback. So an
+ * operator rotates by setting ENCRYPTION_KEY=<new> and ENCRYPTION_KEY_OLD=<old>
+ * — nothing breaks, and the re-encrypt maintenance script migrates every stored
+ * secret to the new key so the OLD value can then be dropped.
  */
+
+/** Derive the 32-byte AES key from a secret string. */
+function deriveKey(secret: string): Buffer {
+  return createHash('sha256').update(secret).digest(); // 32 bytes
+}
 
 function getKey(): Buffer {
   const secret = process.env.ENCRYPTION_KEY || process.env.AUTH_SECRET;
@@ -19,7 +30,16 @@ function getKey(): Buffer {
       'ENCRYPTION_KEY (or AUTH_SECRET) must be set to a strong secret (16+ chars) to store provider keys',
     );
   }
-  return createHash('sha256').update(secret).digest(); // 32 bytes
+  return deriveKey(secret);
+}
+
+/** The previous key during a rotation, or null when ENCRYPTION_KEY_OLD is unset. */
+function getOldKey(): Buffer | null {
+  const secret = process.env.ENCRYPTION_KEY_OLD;
+  if (!secret || secret.length < 16) {
+    return null;
+  }
+  return deriveKey(secret);
 }
 
 export interface EncryptedSecret {
@@ -39,10 +59,11 @@ export function encryptSecret(plaintext: string): EncryptedSecret {
   };
 }
 
-export function decryptSecret(payload: EncryptedSecret): string {
+/** Decrypt with a specific key. Throws on a wrong key (GCM auth tag mismatch). */
+function decryptWith(key: Buffer, payload: EncryptedSecret): string {
   const decipher = createDecipheriv(
     'aes-256-gcm',
-    getKey(),
+    key,
     Buffer.from(payload.iv, 'base64'),
   );
   decipher.setAuthTag(Buffer.from(payload.authTag, 'base64'));
@@ -51,6 +72,25 @@ export function decryptSecret(payload: EncryptedSecret): string {
     decipher.final(),
   ]);
   return dec.toString('utf8');
+}
+
+export function decryptSecret(payload: EncryptedSecret): string {
+  try {
+    return decryptWith(getKey(), payload);
+  } catch (err) {
+    // The secret may still be under the previous key mid-rotation. Fall back to
+    // ENCRYPTION_KEY_OLD when set, so changing ENCRYPTION_KEY never bricks stored
+    // secrets; the re-encrypt script migrates them to the new key.
+    const oldKey = getOldKey();
+    if (oldKey) {
+      try {
+        return decryptWith(oldKey, payload);
+      } catch {
+        // fall through and throw the original (current-key) error
+      }
+    }
+    throw err;
+  }
 }
 
 /** Last 4 characters of a secret, for masked display (e.g. "…a1b2"). */

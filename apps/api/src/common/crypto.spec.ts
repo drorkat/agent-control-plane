@@ -72,6 +72,45 @@ describe('crypto (AES-256-GCM secret encryption)', () => {
     });
   });
 
+  describe('key rotation (ENCRYPTION_KEY_OLD fallback)', () => {
+    const OLD = 'old-encryption-key-0123456789-abcdefghij';
+    const NEW = 'new-encryption-key-9876543210-zyxwvutsrq';
+
+    afterEach(() => {
+      delete process.env.ENCRYPTION_KEY_OLD;
+      process.env.ENCRYPTION_KEY = 'test-encryption-key-0123456789-abcdef';
+    });
+
+    it('decrypts an old-key secret after rotating, via the OLD fallback', () => {
+      process.env.ENCRYPTION_KEY = OLD;
+      const encrypted = encryptSecret('sk-rotate-me');
+      // Rotate: new key becomes current, old key becomes the fallback.
+      process.env.ENCRYPTION_KEY = NEW;
+      process.env.ENCRYPTION_KEY_OLD = OLD;
+      expect(decryptSecret(encrypted)).toBe('sk-rotate-me');
+    });
+
+    it('fails to decrypt an old-key secret when no OLD fallback is set', () => {
+      process.env.ENCRYPTION_KEY = OLD;
+      const encrypted = encryptSecret('sk-rotate-me');
+      process.env.ENCRYPTION_KEY = NEW; // no ENCRYPTION_KEY_OLD
+      expect(() => decryptSecret(encrypted)).toThrow();
+    });
+
+    it('re-encrypting under the new key lets the OLD key be dropped', () => {
+      process.env.ENCRYPTION_KEY = OLD;
+      const encrypted = encryptSecret('sk-rotate-me');
+      // Migrate exactly as the re-encrypt script does: decrypt (OLD fallback) then
+      // re-encrypt under the new current key.
+      process.env.ENCRYPTION_KEY = NEW;
+      process.env.ENCRYPTION_KEY_OLD = OLD;
+      const migrated = encryptSecret(decryptSecret(encrypted));
+      // Now OLD can go away and the secret still decrypts.
+      delete process.env.ENCRYPTION_KEY_OLD;
+      expect(decryptSecret(migrated)).toBe('sk-rotate-me');
+    });
+  });
+
   describe('last4', () => {
     it('returns the last 4 characters of a longer secret', () => {
       expect(last4('sk-1234abcd')).toBe('abcd');

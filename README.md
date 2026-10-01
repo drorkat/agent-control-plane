@@ -113,7 +113,8 @@ Copy `.env.example` to `.env` and adjust. The variables the project reads:
 | --- | --- | --- | --- |
 | `DATABASE_URL` | yes | — | PostgreSQL connection string used by Prisma. |
 | `AUTH_SECRET` | yes | — | Secret that signs JWT session cookies. Must be 32+ random chars and not a known placeholder — the API **refuses to boot** otherwise. Generate with `openssl rand -hex 32`. |
-| `ENCRYPTION_KEY` | yes | — | Key used to encrypt stored provider/GitHub secrets at rest (AES-256-GCM). Required, 32+ chars, not a placeholder (boot fails otherwise). Set it once — changing it makes already-stored secrets undecryptable. |
+| `ENCRYPTION_KEY` | yes | — | Key used to encrypt stored provider/GitHub secrets at rest (AES-256-GCM). Required, 32+ chars, not a placeholder (boot fails otherwise). To rotate it safely, see `ENCRYPTION_KEY_OLD`. |
+| `ENCRYPTION_KEY_OLD` | no | — | Previous `ENCRYPTION_KEY` during a rotation. Decryption falls back to it, so nothing breaks; run `npm run reencrypt-secrets -w @acp/api` to migrate stored secrets to the new key, then remove it. |
 | `WEB_ORIGIN` | no | — | Comma-separated CORS allowlist for cross-origin browser calls. Unset = CORS off (the web app talks to the API same-origin via Next.js rewrites). An arbitrary origin is never reflected with credentials. |
 | `COOKIE_SECURE` | no | `0` in dev, on in prod | `1` forces the `Secure` flag on the session cookie (always on when `NODE_ENV=production`). |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | for Docker | `acp` / `acp_dev_password` / `acp` | Credentials for the bundled Postgres container. |
