@@ -2,6 +2,7 @@ import './load-env';
 
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { Logger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -11,7 +12,10 @@ async function bootstrap() {
   // Fail fast if the session/encryption secrets are missing or default.
   assertSecureConfig();
 
-  const app = await NestFactory.create(AppModule);
+  // bufferLogs holds early logs until the pino logger is installed, so nothing
+  // bypasses structured logging.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(Logger));
 
   // Security headers (HSTS, X-Content-Type-Options, X-Frame-Options, etc.). This
   // is a JSON API consumed same-origin, so helmet's defaults apply cleanly; the

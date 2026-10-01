@@ -119,6 +119,7 @@ Copy `.env.example` to `.env` and adjust. The variables the project reads:
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | for Docker | `acp` / `acp_dev_password` / `acp` | Credentials for the bundled Postgres container. |
 | `API_PORT` | no | `4000` | Port the API listens on. |
 | `NEXT_PUBLIC_API_URL` | no | `http://localhost:4000` | Where the web server proxies `/api/*`. In Docker this is set to `http://api:4000`. |
+| `LOG_LEVEL` | no | `info` | pino log level (`trace`…`fatal`). Logs are structured JSON with a per-request id; metrics are at `GET /api/metrics` (Prometheus). |
 | `AI_MOCK` | no | `0` | `1` uses a built-in mock AI provider — no network, no key. |
 | `GITHUB_MOCK` | no | `0` | `1` uses a built-in mock GitHub client — no network, no token. |
 | `WEBHOOK_ALLOW_PRIVATE` | no | `0` | **Local dev only.** `1` allows webhooks to private/loopback/link-local addresses. Leave unset in production so SSRF protection stays on. |
