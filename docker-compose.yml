@@ -49,6 +49,11 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-acp}:${POSTGRES_PASSWORD:-acp}@db:5432/${POSTGRES_DB:-acp}?schema=public
       API_PORT: "4000"
+      # Empty by default (in-memory rate limiting). To share the limit across
+      # multiple api replicas, start the optional redis service
+      # (`docker compose --profile redis up`) and set REDIS_URL=redis://redis:6379
+      # in .env.
+      REDIS_URL: ${REDIS_URL:-}
     ports:
       - "4000:4000"
     healthcheck:
@@ -79,6 +84,23 @@ services:
       NEXT_PUBLIC_API_URL: http://api:4000
     ports:
       - "3000:3000"
+    networks:
+      - acp
+
+  # Optional shared store for the rate limiter across multiple api replicas.
+  # Opt-in: `docker compose --profile redis up`. Then set REDIS_URL in .env to
+  # redis://redis:6379. Rate-limit counters are ephemeral, so no volume is used.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    profiles: ["redis"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - acp
 

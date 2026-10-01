@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import Redis from 'ioredis';
 import { LoggerModule } from 'nestjs-pino';
 import { PrismaModule } from './prisma/prisma.module';
 import { MetricsModule } from './metrics/metrics.module';
@@ -55,10 +57,29 @@ import { HealthController } from './health/health.controller';
       },
     }),
     // Global rate limit: 300 requests / 60s per client IP. Auth routes tighten
-    // this further (see AuthController's @Throttle). In-memory storage is per
-    // instance — a multi-instance deployment should back this with a shared
-    // store (e.g. Redis via @nestjs/throttler's storage adapter).
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    // this further (see AuthController's @Throttle). Storage is in-memory by
+    // default (fine for a single instance); set REDIS_URL to share one limit
+    // across N instances. On a Redis outage the limiter fails closed, so point
+    // it at a reliable Redis.
+    ThrottlerModule.forRootAsync({
+      useFactory: () => {
+        const throttlers = [{ ttl: 60_000, limit: 300 }];
+        const url = process.env.REDIS_URL;
+        if (!url) {
+          return { throttlers };
+        }
+        const client = new Redis(url);
+        // Never let a Redis hiccup crash the process; ioredis retries on its own.
+        client.on('error', (err) => {
+          // eslint-disable-next-line no-console
+          console.error(`Throttler Redis error: ${err.message}`);
+        });
+        return {
+          throttlers,
+          storage: new ThrottlerStorageRedisService(client),
+        };
+      },
+    }),
     MetricsModule,
     PrismaModule,
     CommonModule,
