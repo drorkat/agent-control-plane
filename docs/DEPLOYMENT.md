@@ -26,7 +26,7 @@ values from `.env.example` to production.
 # A signing secret for session cookies (32+ chars):
 openssl rand -base64 48        # use the output as AUTH_SECRET
 
-# A separate key for encrypting stored provider/GitHub secrets (16+ chars):
+# A separate key for encrypting stored provider/GitHub secrets (32+ chars):
 openssl rand -base64 48        # use the output as ENCRYPTION_KEY
 ```
 
@@ -35,9 +35,14 @@ Notes:
 - `AUTH_SECRET` signs the JWT session cookie. Rotating it invalidates all
   existing sessions (everyone must log in again).
 - `ENCRYPTION_KEY` encrypts provider API keys and GitHub tokens at rest
-  (AES-256-GCM). If it is unset, the app falls back to `AUTH_SECRET`. **Do not
-  change it after secrets have been stored** — previously encrypted values can no
-  longer be decrypted, and affected agents/connections must be re-entered.
+  (AES-256-GCM). Like `AUTH_SECRET`, it is **required**: the API refuses to boot
+  (*"Insecure configuration — refusing to start"*) unless it is set, at least 32
+  characters, and not one of the `.env.example` placeholders — there is no
+  fallback to `AUTH_SECRET`. To **rotate** it safely, put the new value in
+  `ENCRYPTION_KEY` and the previous one in `ENCRYPTION_KEY_OLD` (decryption falls
+  back to the old key, so nothing breaks), redeploy, then run
+  `npm run reencrypt-secrets -w @acp/api` to re-encrypt every stored secret to
+  the new key and remove `ENCRYPTION_KEY_OLD`.
 
 ## Option A — Docker Compose
 
@@ -195,8 +200,10 @@ scheduling/retention, and the encryption-key caveat — see the
   proxies `/api/*` to `NEXT_PUBLIC_API_URL`. In Compose that must be
   `http://api:4000`; on a VM it must be the API's reachable address. Confirm the
   API is up on port `4000`.
-- **"ENCRYPTION_KEY (or AUTH_SECRET) must be set…" on startup.** The encryption
-  key is missing or shorter than 16 characters. Set a strong `ENCRYPTION_KEY`.
+- **"Insecure configuration — refusing to start" on startup.** `AUTH_SECRET`
+  and/or `ENCRYPTION_KEY` is missing, shorter than 32 characters, or still a
+  `.env.example` placeholder. Set strong, unique values
+  (`openssl rand -hex 32`); the error lists exactly which one is wrong.
 - **Can't log in with the demo account.** The seed only sets the demo password
   when the user is first created. If you started once with a different
   `DEFAULT_USER_*`, use those credentials, or reset the database.
