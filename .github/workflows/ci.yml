@@ -105,3 +105,77 @@ jobs:
 
       - name: Test (API e2e)
         run: npm run test:e2e -w @acp/api
+
+  web-e2e:
+    name: Web E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    # The browser E2E drives the real web UI, which proxies /api/* to a real API
+    # backed by a throwaway Postgres.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: acp
+          POSTGRES_PASSWORD: acp
+          POSTGRES_DB: acp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://acp:acp@localhost:5432/acp_test?schema=public
+      AUTH_SECRET: ci-e2e-auth-secret-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      ENCRYPTION_KEY: ci-e2e-encryption-key-bbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      AI_MOCK: '1'
+      GITHUB_MOCK: '1'
+      WEBHOOK_ALLOW_PRIVATE: '1'
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      - name: Push database schema
+        run: npx prisma db push --schema apps/api/prisma/schema.prisma
+
+      # Build both apps so the API runs from dist and the web from `next start`.
+      - name: Build
+        run: npm run build
+
+      # Download the matching Chromium (+ OS libs). This runner has no
+      # pre-installed browser, so the config falls back to this managed one.
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+
+      - name: Start servers and run Playwright
+        run: |
+          set -e
+          node apps/api/dist/main.js > /tmp/acp-api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4000/api/health >/dev/null && break; sleep 1; done
+          (cd apps/web && npx next start -p 3000 > /tmp/acp-web.log 2>&1 &)
+          for i in $(seq 1 40); do curl -sf http://localhost:3000/login >/dev/null && break; sleep 1; done
+          npm run test:e2e -w @acp/web
+
+      - name: Server logs on failure
+        if: failure()
+        run: |
+          echo '--- API ---'; tail -n 100 /tmp/acp-api.log || true
+          echo '--- WEB ---'; tail -n 100 /tmp/acp-web.log || true

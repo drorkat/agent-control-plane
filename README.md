@@ -105,6 +105,16 @@ Next.js proxies to the API (see `apps/web/next.config.mjs`).
 Other root scripts: `npm run build` (build both apps), `npm run db:generate`
 (regenerate the Prisma client), `npm run db:studio` (open Prisma Studio).
 
+## Testing
+
+- `npm test` — the API unit suite (pure; no DB or network).
+- `npm run test:e2e -w @acp/api` — API integration tests against a real Postgres
+  (`DATABASE_URL` must point at one; uses `AI_MOCK`/`GITHUB_MOCK`).
+- `npm run test:e2e -w @acp/web` — browser E2E (Playwright) of the key UI flows.
+  It needs the stack running: build, then start the API (`node apps/api/dist/main.js`)
+  and the web (`npm run start -w @acp/web`), then run it. CI does this automatically
+  (see `.github/workflows/ci.yml`).
+
 ## Configuration
 
 Copy `.env.example` to `.env` and adjust. The variables the project reads:

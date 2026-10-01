@@ -32,3 +32,8 @@ yarn-error.log*
 # test / coverage
 coverage/
 .turbo/
+
+# playwright
+test-results/
+playwright-report/
+playwright/.cache/
