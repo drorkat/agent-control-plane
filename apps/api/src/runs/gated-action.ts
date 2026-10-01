@@ -23,3 +23,18 @@ export function gatedActionForProposal(
     ? OPEN_PR_ACTION
     : READ_REPO_ACTION;
 }
+
+/**
+ * Pick the gateway action for a finished run. When the agent explicitly
+ * requested a governed action (a `request_action` loop step — e.g.
+ * `merge_pull_request` or `delete_data`), THAT is what the gateway evaluates;
+ * this is how a run reaches the blocked / high-risk tiers instead of only the
+ * read_repo / open_pull_request ones. Otherwise the action is derived from the
+ * proposal (see {@link gatedActionForProposal}).
+ */
+export function gatedAction(
+  requestedAction: string | undefined,
+  proposal: ChangeProposal | null,
+): string {
+  return requestedAction ?? gatedActionForProposal(proposal);
+}

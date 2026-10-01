@@ -192,6 +192,90 @@ describe('ACP API (e2e)', () => {
       const types = (run.events as Array<{ type: string }>).map((e) => e.type);
       expect(types).toContain('APPROVAL_REQUESTED');
     });
+
+    type Ev = { type: string; payload?: Record<string, unknown> };
+
+    /**
+     * Create a repo-linked project + mock agent + a task titled `title`, then
+     * start a run and return the persisted run with its events. The repo link
+     * makes the agent loop run (offline, via GITHUB_MOCK); a `[[action:<name>]]`
+     * marker in the title drives the mock to request that governed action, which
+     * the run engine routes through the Tool Gateway.
+     */
+    async function startRepoRun(
+      agent: ReturnType<typeof request.agent>,
+      title: string,
+    ) {
+      const project = (
+        await agent.post('/api/projects').send({ name: `P-${uniq()}` }).expect(201)
+      ).body;
+      await prisma.project.update({
+        where: { id: project.id },
+        data: { repoOwner: 'acme', repoName: 'web' },
+      });
+      const ag = (
+        await agent
+          .post('/api/agents')
+          .send({ name: 'Coder', provider: 'mock', model: 'mock-1' })
+          .expect(201)
+      ).body;
+      const task = (
+        await agent
+          .post('/api/tasks')
+          .send({ title, projectId: project.id })
+          .expect(201)
+      ).body;
+      return (
+        await agent
+          .post('/api/runs')
+          .send({ taskId: task.id, agentId: ag.id })
+          .expect(201)
+      ).body;
+    }
+
+    it('refuses a blocked action and fails the run (delete_data → blocked)', async () => {
+      const { agent } = await signupOwner();
+      const run = await startRepoRun(agent, 'Purge records [[action:delete_data]]');
+
+      expect(run.status).toBe('failed');
+      const events = run.events as Ev[];
+      const blocked = events.find((e) => e.type === 'TOOL_BLOCKED');
+      expect(blocked?.payload?.action).toBe('delete_data');
+      const types = events.map((e) => e.type);
+      expect(types).not.toContain('APPROVAL_REQUESTED');
+      expect(types).not.toContain('RUN_COMPLETED');
+    });
+
+    it('parks a high-risk action at high risk, then executes it on approval (merge_pull_request → approval/high)', async () => {
+      const { agent } = await signupOwner();
+      const run = await startRepoRun(
+        agent,
+        'Merge the release PR [[action:merge_pull_request]]',
+      );
+
+      expect(run.status).toBe('waiting_approval');
+      const requested = (run.events as Ev[]).find(
+        (e) => e.type === 'APPROVAL_REQUESTED',
+      );
+      expect(requested?.payload?.action).toBe('merge_pull_request');
+      expect(requested?.payload?.risk).toBe('high');
+
+      // Approving must resume as the SAME governed action (recorded executed),
+      // never silently open a pull request instead.
+      const approvalId = requested?.payload?.approvalId as string;
+      await agent.post(`/api/approvals/${approvalId}/approve`).expect(201);
+
+      const resumed = (await agent.get(`/api/runs/${run.id}`).expect(200)).body;
+      expect(resumed.status).toBe('completed');
+      const executed = (resumed.events as Ev[]).find(
+        (e) => e.type === 'TOOL_EXECUTED',
+      );
+      expect(executed?.payload?.action).toBe('merge_pull_request');
+      const result = executed?.payload?.result as
+        | Record<string, unknown>
+        | undefined;
+      expect(result?.note).toBe('approved by reviewer');
+    });
   });
 
   describe('pagination', () => {

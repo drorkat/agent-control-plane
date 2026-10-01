@@ -22,12 +22,17 @@ import {
 export type AgentAction =
   | { tool: 'list_files' }
   | { tool: 'read_file'; path: string }
-  | { tool: 'propose_changes'; summary: string; files: ProposedFile[] };
+  | { tool: 'propose_changes'; summary: string; files: ProposedFile[] }
+  // Request a governed, higher-impact tool action (e.g. merge_pull_request,
+  // deploy_production, delete_data). The run engine routes it through the Tool
+  // Gateway, so a `blocked` policy refuses it and a higher-risk one parks for a
+  // human — this is what exercises the gateway's non-auto tiers.
+  | { tool: 'request_action'; action: string };
 
 /** A recorded step of the loop, for the run's event log. */
 export interface AgentStep {
   index: number;
-  tool: 'list_files' | 'read_file' | 'propose_changes';
+  tool: 'list_files' | 'read_file' | 'propose_changes' | 'request_action';
   path?: string;
   resultSummary: string;
 }
@@ -35,6 +40,12 @@ export interface AgentStep {
 export interface AgentLoopResult {
   /** The final change proposal, or null if the agent never produced one. */
   proposal: ChangeProposal | null;
+  /**
+   * A governed action the agent explicitly requested (merge_pull_request,
+   * delete_data, ...), or undefined. When set, the run engine routes THIS through
+   * the gateway instead of the proposal-derived action.
+   */
+  requestedAction?: string;
   /** Original content of every file the agent saw (path -> content), for diffs. */
   readFiles: Map<string, string>;
   steps: AgentStep[];
@@ -64,10 +75,15 @@ export function buildAgentLoopSystemPrompt(base: string): string {
     '  {"tool":"list_files"}                        — list the repository file paths',
     '  {"tool":"read_file","path":"<path>"}         — read one file\'s contents',
     '  {"tool":"propose_changes","summary":"<why>","files":[{"path":"<path>","content":"<full new file content>"}]}',
+    '  {"tool":"request_action","action":"<name>"}  — request a governed action',
     'Use list_files / read_file to gather what you need, then finish with',
     'propose_changes. Each file `content` MUST be the FULL new content of that',
     'file — never a diff or a fragment. Keep the change minimal and focused on the',
-    'task. Output no prose — only the single JSON action object for this step.',
+    'task. Use request_action ONLY when the task explicitly calls for a',
+    'higher-impact operation beyond proposing edits (e.g. merging a pull request,',
+    'deploying, deleting data); it is sent to the governance gateway for a human',
+    'to approve or block, never executed directly. Output no prose — only the',
+    'single JSON action object for this step.',
   ].join('\n');
 }
 
@@ -98,6 +114,16 @@ export function parseAgentAction(text: string): AgentAction | null {
     const proposal = parseChangeProposal(text);
     if (proposal) {
       return { tool: 'propose_changes', summary: proposal.summary, files: proposal.files };
+    }
+    return null;
+  }
+  if (tool === 'request_action') {
+    // A governed action the agent wants to take (e.g. merge_pull_request,
+    // delete_data). We only need a non-empty action name here; the run engine
+    // routes it through the gateway and decides what happens to it.
+    const requested = (obj as { action?: unknown }).action;
+    if (typeof requested === 'string' && requested.trim()) {
+      return { tool: 'request_action', action: requested.trim() };
     }
     return null;
   }
@@ -153,6 +179,7 @@ export async function runAgentLoop(
   let outputTokens = 0;
   let finalText = '';
   let proposal: ChangeProposal | null = null;
+  let requestedAction: string | undefined;
   let reads = 0;
 
   for (let i = 0; i < MAX_STEPS; i += 1) {
@@ -185,6 +212,25 @@ export async function runAgentLoop(
       await opts.onEvent?.('TOOL_RESULT', {
         tool: 'propose_changes',
         fileCount: action.files.length,
+      });
+      break;
+    }
+
+    if (action.tool === 'request_action') {
+      // The agent explicitly asked to perform a governed, higher-impact action.
+      // The loop does NOT execute it — it records the request and hands the
+      // action to the run engine, which routes it through the Tool Gateway
+      // (blocked → refused, high-risk → parks for a human). This is what makes
+      // the gateway's non-auto tiers reachable from a real run.
+      requestedAction = action.action;
+      await opts.onEvent?.('TOOL_REQUESTED', {
+        tool: 'request_action',
+        action: action.action,
+      });
+      steps.push({
+        index: steps.length + 1,
+        tool: 'request_action',
+        resultSummary: `requested ${action.action}`,
       });
       break;
     }
@@ -281,7 +327,15 @@ export async function runAgentLoop(
     }
   }
 
-  return { proposal, readFiles, steps, inputTokens, outputTokens, finalText };
+  return {
+    proposal,
+    requestedAction,
+    readFiles,
+    steps,
+    inputTokens,
+    outputTokens,
+    finalText,
+  };
 }
 
 /** Build the per-step prompt: task, repo context, progress so far, next action. */

@@ -17,6 +17,9 @@ const REPO_FILE_MARKER = '### File: ';
  *  - Agent loop mode (the loop system prompt mentions `propose_changes`) → ONE
  *    JSON action per step, walking list_files → read_file → propose_changes so
  *    the multi-step loop is exercised end to end.
+ *  - Agent loop mode with a `[[action:<name>]]` marker in the task → a single
+ *    request_action step for that governed action, so the Tool Gateway's
+ *    blocked / high-risk tiers can be driven deterministically.
  * Token usage is fake but deterministic.
  */
 export class MockProvider implements AIProvider {
@@ -61,6 +64,15 @@ function buildPlanResponse(prompt: string): string {
  * mock walks a deterministic sequence: list_files → read_file → propose_changes.
  */
 function buildLoopAction(prompt: string): string {
+  // A task can explicitly drive a governed action with a `[[action:<name>]]`
+  // marker (e.g. `[[action:delete_data]]`). Emit it as the very first action so
+  // the run engine routes it straight through the Tool Gateway — this is how
+  // the blocked / approval-high tiers are exercised deterministically.
+  const requested = requestedActionMarker(prompt);
+  if (requested) {
+    return JSON.stringify({ tool: 'request_action', action: requested });
+  }
+
   const done = countProgressSteps(prompt);
 
   // Step 1: survey the repository.
@@ -97,6 +109,18 @@ function buildLoopAction(prompt: string): string {
       : 'Add docs/agent-notes.md',
     files,
   });
+}
+
+/**
+ * Detect a governed-action marker in the prompt: `[[action:<name>]]`. A task can
+ * embed e.g. `[[action:delete_data]]` or `[[action:merge_pull_request]]` to make
+ * the mock request that governed action instead of proposing edits, so the
+ * gateway's blocked / high-risk tiers can be exercised deterministically in dev
+ * and tests. The name is lower-cased and limited to the policy-key charset.
+ */
+function requestedActionMarker(prompt: string): string | null {
+  const m = prompt.match(/\[\[action:([a-z_]+)\]\]/i);
+  return m ? m[1].toLowerCase() : null;
 }
 
 /** Count the numbered step lines in the prompt's "## Progress so far" section. */

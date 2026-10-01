@@ -94,7 +94,12 @@ export class ApprovalsService {
       metadata: { runId: approval.runId, actionType: approval.actionType },
     });
 
-    await this.runsService.resume(approval.runId, true, userId);
+    await this.runsService.resume(
+      approval.runId,
+      true,
+      userId,
+      approval.actionType,
+    );
 
     return updated;
   }
@@ -129,7 +134,12 @@ export class ApprovalsService {
       },
     });
 
-    await this.runsService.resume(approval.runId, false, userId);
+    await this.runsService.resume(
+      approval.runId,
+      false,
+      userId,
+      approval.actionType,
+    );
 
     return updated;
   }

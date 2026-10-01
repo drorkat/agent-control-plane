@@ -15,7 +15,7 @@ import { OpenPrFile, OpenPrInput } from '../github/github-client.interface';
 import { RepoContextService } from './repo-context.service';
 import { ChangeProposal } from './change-proposal';
 import { buildAgentLoopSystemPrompt, runAgentLoop } from './agent-loop';
-import { OPEN_PR_ACTION, gatedActionForProposal } from './gated-action';
+import { OPEN_PR_ACTION, gatedAction } from './gated-action';
 import { PaginationQuery, paginationArgs } from '../common/pagination';
 import {
   WebhookDispatcher,
@@ -126,6 +126,7 @@ export class RunsService {
       let inputTokens = 0;
       let outputTokens = 0;
       let proposal: ChangeProposal | null = null;
+      let requestedAction: string | undefined;
       let beforeByPath = new Map<string, string>();
 
       const client =
@@ -169,6 +170,7 @@ export class RunsService {
         inputTokens = loop.inputTokens;
         outputTokens = loop.outputTokens;
         proposal = loop.proposal;
+        requestedAction = loop.requestedAction;
         beforeByPath = loop.readFiles;
       } else {
         // No repo: a single context-free planning call.
@@ -248,12 +250,14 @@ export class RunsService {
         return this.findOne(run.id);
       }
 
-      // Route the run's ACTUAL proposed action through the Tool Gateway. A run
-      // that proposed file edits maps to open_pull_request (approval); one that
-      // only read/analyzed maps to read_repo (auto) and completes without a
-      // human — governance that reflects what the agent did, not a blanket
-      // "everything needs approval".
-      const action = gatedActionForProposal(proposal);
+      // Route the run's ACTUAL action through the Tool Gateway. If the agent
+      // explicitly requested a governed action (merge_pull_request,
+      // delete_data, ...), that is what gets evaluated — reaching the blocked /
+      // high-risk tiers. Otherwise it is derived from the proposal: file edits
+      // map to open_pull_request (approval), a read-only run to read_repo (auto)
+      // and completes without a human. Governance that reflects what the agent
+      // did, not a blanket "everything needs approval".
+      const action = gatedAction(requestedAction, proposal);
       const { decision, risk } = this.gateway.evaluate(action);
 
       if (decision === 'blocked') {
@@ -384,11 +388,19 @@ export class RunsService {
 
   /**
    * Resume a run parked at `waiting_approval` after a reviewer decides. On
-   * approval, the proposed action is (mock) executed and the run completes; on
-   * rejection the run fails. Either way the agent returns to idle. Records the
+   * approval the parked `action` is executed — open_pull_request opens a real
+   * PR, while any other governed action (merge_pull_request, deploy_production,
+   * ...) is recorded as executed — and the run completes; on rejection the run
+   * fails. Either way the agent returns to idle. `action` is the Approval row's
+   * actionType (defaults to open_pull_request for older callers). Records the
    * decision as RunEvents plus an audit entry. Scoped to the default org.
    */
-  async resume(runId: string, approved: boolean, resolvedByUserId?: string) {
+  async resume(
+    runId: string,
+    approved: boolean,
+    resolvedByUserId?: string,
+    action: string = OPEN_PR_ACTION,
+  ) {
     const run = await this.prisma.run.findFirst({
       where: { id: runId, organizationId: currentOrgId() },
     });
@@ -399,42 +411,95 @@ export class RunsService {
       throw new BadRequestException('Run is not awaiting approval');
     }
 
-    // A parked run is always an open_pull_request awaiting a human (read-only
-    // runs auto-complete and never reach here).
-    const action = OPEN_PR_ACTION;
+    // What was parked is decided by the Approval row's actionType, passed in by
+    // the approvals service (defaulting to open_pull_request). Most parked runs
+    // are an open_pull_request; a run that requested a governed action
+    // (merge_pull_request, deploy_production, ...) parks THAT and must resume as
+    // the same action — never silently open a PR instead.
 
     if (approved) {
       await this.addEvent(runId, 'APPROVAL_RECEIVED');
-      // Now that a human has approved, actually execute the tool: open a real
-      // GitHub pull request (branch -> commit -> PR). A failure here (no repo
-      // linked, GitHub not connected, or an API error) fails the run cleanly
-      // rather than pretending the PR was opened.
-      try {
-        const result = await this.executeOpenPullRequest(run);
-        await this.addEvent(runId, 'TOOL_EXECUTED', { action, result });
+      if (action === OPEN_PR_ACTION) {
+        // Now that a human has approved, actually execute the tool: open a real
+        // GitHub pull request (branch -> commit -> PR). A failure here (no repo
+        // linked, GitHub not connected, or an API error) fails the run cleanly
+        // rather than pretending the PR was opened.
+        try {
+          const result = await this.executeOpenPullRequest(run);
+          await this.addEvent(runId, 'TOOL_EXECUTED', { action, result });
+          await this.audit.record({
+            actorType: 'user',
+            actorId: resolvedByUserId,
+            action: 'tool.executed',
+            resourceType: 'run',
+            resourceId: runId,
+            metadata: { action, result },
+          });
+          const prUrl =
+            typeof result.pullRequestUrl === 'string'
+              ? result.pullRequestUrl
+              : undefined;
+          if (prUrl) {
+            this.emit(
+              'pull_request.opened',
+              { runId, pullRequestUrl: prUrl },
+              {
+                type: 'pull_request.opened',
+                title: 'Pull request opened',
+                body: prUrl,
+              },
+            );
+          }
+          await this.addEvent(runId, 'RUN_COMPLETED');
+          await this.prisma.run.update({
+            where: { id: runId },
+            data: { status: 'completed', completedAt: new Date() },
+          });
+          this.emit(
+            'run.completed',
+            { runId, status: 'completed' },
+            { type: 'run.completed', title: 'Run completed' },
+          );
+        } catch (err) {
+          // The GitHub client never puts token material in its error messages,
+          // so this is safe to record and show.
+          const message = err instanceof Error ? err.message : String(err);
+          await this.audit.record({
+            actorType: 'user',
+            actorId: resolvedByUserId,
+            action: 'tool.failed',
+            resourceType: 'run',
+            resourceId: runId,
+            metadata: { action, message },
+          });
+          await this.addEvent(runId, 'RUN_FAILED', { message });
+          await this.prisma.run.update({
+            where: { id: runId },
+            data: { status: 'failed', completedAt: new Date() },
+          });
+          this.emit(
+            'run.failed',
+            { runId, message },
+            { type: 'run.failed', title: 'Run failed', body: message },
+          );
+        }
+      } else {
+        // A governed, non-PR action (merge_pull_request, deploy_production, ...)
+        // approved by a human. The gateway's role was the human gate; record the
+        // approved execution and complete the run. We deliberately do not
+        // fabricate a GitHub side effect for an action the run only requested.
+        await this.addEvent(runId, 'TOOL_EXECUTED', {
+          action,
+          result: { executed: true, note: 'approved by reviewer' },
+        });
         await this.audit.record({
           actorType: 'user',
           actorId: resolvedByUserId,
           action: 'tool.executed',
           resourceType: 'run',
           resourceId: runId,
-          metadata: { action, result },
+          metadata: { action },
         });
-        const prUrl =
-          typeof result.pullRequestUrl === 'string'
-            ? result.pullRequestUrl
-            : undefined;
-        if (prUrl) {
-          this.emit(
-            'pull_request.opened',
-            { runId, pullRequestUrl: prUrl },
-            {
-              type: 'pull_request.opened',
-              title: 'Pull request opened',
-              body: prUrl,
-            },
-          );
-        }
         await this.addEvent(runId, 'RUN_COMPLETED');
         await this.prisma.run.update({
           where: { id: runId },
@@ -444,28 +509,6 @@ export class RunsService {
           'run.completed',
           { runId, status: 'completed' },
           { type: 'run.completed', title: 'Run completed' },
-        );
-      } catch (err) {
-        // The GitHub client never puts token material in its error messages, so
-        // this is safe to record and show.
-        const message = err instanceof Error ? err.message : String(err);
-        await this.audit.record({
-          actorType: 'user',
-          actorId: resolvedByUserId,
-          action: 'tool.failed',
-          resourceType: 'run',
-          resourceId: runId,
-          metadata: { action, message },
-        });
-        await this.addEvent(runId, 'RUN_FAILED', { message });
-        await this.prisma.run.update({
-          where: { id: runId },
-          data: { status: 'failed', completedAt: new Date() },
-        });
-        this.emit(
-          'run.failed',
-          { runId, message },
-          { type: 'run.failed', title: 'Run failed', body: message },
         );
       }
     } else {

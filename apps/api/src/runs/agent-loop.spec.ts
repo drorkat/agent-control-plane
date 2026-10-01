@@ -73,6 +73,18 @@ describe('parseAgentAction', () => {
     });
   });
 
+  it('parses a request_action with its action name', () => {
+    expect(
+      parseAgentAction('{"tool":"request_action","action":"merge_pull_request"}'),
+    ).toEqual({ tool: 'request_action', action: 'merge_pull_request' });
+  });
+
+  it('trims whitespace around a request_action action name', () => {
+    expect(
+      parseAgentAction('{"tool":"request_action","action":"  delete_data  "}'),
+    ).toEqual({ tool: 'request_action', action: 'delete_data' });
+  });
+
   it('tolerates prose surrounding the JSON action', () => {
     expect(
       parseAgentAction('Sure, my action is: {"tool":"list_files"} — thanks!'),
@@ -82,6 +94,8 @@ describe('parseAgentAction', () => {
   it.each([
     ['a read_file missing its path', '{"tool":"read_file"}'],
     ['a read_file with a blank path', '{"tool":"read_file","path":"   "}'],
+    ['a request_action missing its action', '{"tool":"request_action"}'],
+    ['a request_action with a blank action', '{"tool":"request_action","action":"  "}'],
     ['an unknown tool', '{"tool":"delete_everything"}'],
     ['a missing tool key', '{"foo":"bar"}'],
     ['a propose_changes with no valid files', '{"tool":"propose_changes","summary":"s","files":[]}'],
@@ -147,14 +161,45 @@ describe('runAgentLoop gateway enforcement', () => {
   });
 });
 
+describe('runAgentLoop request_action', () => {
+  it('records a requested governed action and never touches the repo', async () => {
+    const getFile = jest.fn();
+    const events: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const result = await runAgentLoop({
+      ...baseOpts,
+      provider: scriptedProvider([
+        '{"tool":"request_action","action":"merge_pull_request"}',
+      ]),
+      client: stubClient(getFile),
+      onEvent: async (type, payload) => {
+        events.push({ type, payload });
+      },
+      gate: () => ({ decision: 'auto', risk: 'low' }),
+    });
+
+    // The loop hands the action to the run engine; it does not execute it, read
+    // any file, or produce a proposal.
+    expect(result.requestedAction).toBe('merge_pull_request');
+    expect(result.proposal).toBeNull();
+    expect(getFile).not.toHaveBeenCalled();
+    const req = events.find(
+      (e) => e.type === 'TOOL_REQUESTED' && e.payload.tool === 'request_action',
+    );
+    expect(req?.payload.action).toBe('merge_pull_request');
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0].tool).toBe('request_action');
+  });
+});
+
 describe('buildAgentLoopSystemPrompt', () => {
   it('includes the base instructions and the propose_changes tool', () => {
     const prompt = buildAgentLoopSystemPrompt('BASE_MARKER');
     expect(prompt).toContain('BASE_MARKER');
     expect(prompt).toContain('propose_changes');
     // The mock provider detects loop mode by this exact word; also surface the
-    // other two tools so the protocol stays fully described.
+    // other tools so the protocol stays fully described.
     expect(prompt).toContain('list_files');
     expect(prompt).toContain('read_file');
+    expect(prompt).toContain('request_action');
   });
 });
