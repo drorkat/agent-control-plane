@@ -96,7 +96,7 @@ cp .env.example .env
 docker compose up -d db
 
 npm install                # installs all workspaces (also generates the Prisma client)
-npm run db:push            # create/sync the database schema
+npm run db:migrate         # apply versioned migrations (or db:push for a quick sync)
 npm run dev                # runs the API (:4000) and web (:3000) together
 ```
 
@@ -105,7 +105,9 @@ npm run dev                # runs the API (:4000) and web (:3000) together
 Next.js proxies to the API (see `apps/web/next.config.mjs`).
 
 Other root scripts: `npm run build` (build both apps), `npm run db:generate`
-(regenerate the Prisma client), `npm run db:studio` (open Prisma Studio).
+(regenerate the Prisma client), `npm run db:studio` (open Prisma Studio),
+`npm run db:migrate:dev -- --name <change>` (author a new migration after a
+schema edit). See `docs/DEPLOYMENT.md` for the migration workflow.
 
 ## Testing
 

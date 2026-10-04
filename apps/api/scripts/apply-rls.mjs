@@ -2,9 +2,9 @@
 //
 //   npm run db:rls -w @acp/api
 //
-// Run this as an admin step AFTER the schema exists (after `prisma db push` /
-// `db:push`), with a privileged connection — the table owner or a superuser —
-// in DATABASE_URL (the same connection you push the schema with). A restricted
+// Run this as an admin step AFTER the schema exists (after `npm run db:migrate`
+// or `db:push`), with a privileged connection — the table owner or a superuser —
+// in DATABASE_URL (the same connection you apply the schema with). A restricted
 // runtime role cannot ALTER the tables.
 //
 // The statements are idempotent, so re-running is safe (e.g. after a schema

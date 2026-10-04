@@ -63,8 +63,9 @@ services.
    docker compose up -d --build
    ```
 
-   On first start the `api` container runs `prisma db push` to create the schema,
-   then boots. It also seeds a demo owner account (see below).
+   On start the `api` container applies the versioned migrations
+   (`prisma migrate deploy`) to create or update the schema, then boots. It also
+   seeds a demo owner account (see below).
 
 3. Open **http://localhost:3000** and sign in:
 
@@ -112,7 +113,7 @@ pull requests (add the provider key and GitHub token in the app UI).
    ```bash
    cp .env.example .env      # set DATABASE_URL, AUTH_SECRET, ENCRYPTION_KEY
    npm ci
-   npm run db:push           # create the schema
+   npm run db:migrate        # apply versioned migrations (see "Database migrations")
    npm run -w @acp/api build # -> apps/api/dist
    npm run -w @acp/web build # -> apps/web/.next
    ```
@@ -131,7 +132,7 @@ pull requests (add the provider key and GitHub token in the app UI).
    ```
 
 5. **Keep them running** with a process manager (systemd, pm2, …). Run
-   `npm run db:push` again after any upgrade that changes the schema.
+   `npm run db:migrate` again after any upgrade that ships new migrations.
 
 ## `WEBHOOK_ALLOW_PRIVATE` and SSRF
 
@@ -154,19 +155,41 @@ production** — turning it on there re-opens the SSRF hole.
 git pull
 
 # Docker:
-docker compose up -d --build   # the api container re-runs `prisma db push`
+docker compose up -d --build   # the api container re-applies DB migrations
 
 # Manual:
 npm ci
-npm run db:push                # apply any schema changes
+npm run db:migrate             # apply any new migrations
 npm run -w @acp/api build
 npm run -w @acp/web build
 # restart both processes
 ```
 
-Back up your database before upgrading (below). Because the project uses
-`prisma db push` (not versioned migrations), review schema changes on a copy
-first if you run a large or important dataset.
+Back up your database before upgrading (below), and on a large or important
+dataset apply new migrations to a copy first to review their effect.
+
+## Database migrations
+
+The schema is managed with **versioned Prisma migrations** under
+`apps/api/prisma/migrations/`. Each migration is plain SQL, checked into git,
+and applied in order.
+
+- **Production / CI** apply migrations with `npm run db:migrate`
+  (`prisma migrate deploy`) — it runs only the migrations not yet applied and
+  never prompts, so it is safe in an automated deploy. The Docker `api` entry
+  point and the manual steps above both use it. Check what is applied with
+  `npm run db:migrate:status`.
+- **Changing the schema**: edit `apps/api/prisma/schema.prisma`, then run
+  `npm run db:migrate:dev -- --name <change>` against a dev database. Prisma
+  writes a new timestamped migration and applies it locally; commit the
+  generated folder alongside the schema change.
+- **`npm run db:push`** (`prisma migrate`'s schema-sync sibling) is still
+  available for throwaway local prototyping — it reconciles a database to the
+  schema without creating a migration. Do not use it to manage a database you
+  care about; create a migration instead.
+
+Row-level security policies are not part of the migration history; apply them
+separately with `npm run db:rls -w @acp/api` (see `docs/RLS.md`).
 
 ## Backups
 

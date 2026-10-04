@@ -79,9 +79,9 @@ pg_restore "$DATABASE_URL" --clean --if-exists < acp-YYYY-MM-DD.dump
 psql "$DATABASE_URL" < acp-YYYY-MM-DD.sql
 ```
 
-After a restore, (re)start the API. On boot it runs `prisma db push` to reconcile
-the schema, so restoring an older dump and starting a newer API build brings the
-schema up to date automatically. Confirm health:
+After a restore, (re)start the API. On boot it runs `prisma migrate deploy` to
+apply any pending migrations, so restoring an older dump and starting a newer API
+build brings the schema up to date automatically. Confirm health:
 
 ```bash
 curl -fsS http://localhost:4000/api/health      # expect {"status":"ok","db":"up",...}

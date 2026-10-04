@@ -12,7 +12,7 @@ database, then:
 ```bash
 cp .env.example .env      # set DATABASE_URL, AUTH_SECRET, ENCRYPTION_KEY
 npm install
-npm run db:push           # create the schema
+npm run db:migrate        # create the schema from the versioned migrations
 npm run dev               # API on :4000, web on :3000
 ```
 
@@ -39,7 +39,9 @@ npm run -w @acp/web lint      # ESLint for the web app
 ```
 
 `npm run build` from the root builds both apps. If you change the Prisma schema,
-run `npm run db:generate` (and `npm run db:push` to apply it to your database).
+author a migration with `npm run db:migrate:dev -- --name <change>` (this also
+regenerates the Prisma client); commit the generated `prisma/migrations/` folder
+with your change. See the "Database migrations" section of `docs/DEPLOYMENT.md`.
 
 ## Code style
 

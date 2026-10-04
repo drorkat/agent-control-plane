@@ -38,9 +38,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Bring over installed dependencies (including the generated Prisma client and
-# the Prisma CLI, used for `db push` at startup), the compiled API, and the
-# schema. The Prisma CLI is a dev dependency, so node_modules is copied whole
-# rather than pruned.
+# the Prisma CLI, used to apply migrations at startup), the compiled API, and
+# the schema plus its migrations. The Prisma CLI is a dev dependency, so
+# node_modules is copied whole rather than pruned.
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/package-lock.json ./package-lock.json
@@ -50,7 +50,7 @@ COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
 EXPOSE 4000
 
-# Ensure the database schema exists (the repo uses `prisma db push`, not
-# migrations), then start the server. DATABASE_URL is supplied by the environment
+# Apply any pending versioned migrations (idempotent — only unapplied ones run),
+# then start the server. DATABASE_URL is supplied by the environment
 # (see docker-compose.yml).
-CMD ["sh", "-c", "npx prisma db push --schema apps/api/prisma/schema.prisma --skip-generate && node apps/api/dist/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy --schema apps/api/prisma/schema.prisma && node apps/api/dist/main.js"]

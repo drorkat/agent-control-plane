@@ -99,7 +99,15 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate --schema apps/api/prisma/schema.prisma
 
-      # Create the schema in the throwaway database before the suite runs.
+      # Apply the versioned migrations to the throwaway database — the same
+      # command production runs (see DEPLOYMENT.md). This exercises the
+      # migration history on every CI run.
+      - name: Apply migrations
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+
+      # Reconcile the schema afterwards. This is a no-op when the migrations are
+      # current, and keeps the quick `db push` prototyping flow from ever
+      # blocking CI if a schema edit has not been turned into a migration yet.
       - name: Push database schema
         run: npx prisma db push --schema apps/api/prisma/schema.prisma
 
@@ -151,6 +159,11 @@ jobs:
 
       - name: Generate Prisma client
         run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      # Apply versioned migrations (production path), then reconcile the schema
+      # — a no-op when migrations are current (see the integration job above).
+      - name: Apply migrations
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
 
       - name: Push database schema
         run: npx prisma db push --schema apps/api/prisma/schema.prisma

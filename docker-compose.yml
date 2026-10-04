@@ -6,7 +6,7 @@
 #
 # Services:
 #   db  — PostgreSQL (data persisted in the `pgdata` volume)
-#   api — NestJS API; on start it syncs the Prisma schema then serves on :4000
+#   api — NestJS API; on start it applies DB migrations then serves on :4000
 #   web — Next.js web app on :3000; proxies /api/* to the api service
 #
 # Values interpolated below (e.g. ${POSTGRES_USER}) are read from the root .env,
