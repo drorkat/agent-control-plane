@@ -58,7 +58,8 @@ export type RunEventType =
   | 'CONTEXT_READ'
   | 'CHANGES_PROPOSED'
   | 'RUN_COMPLETED'
-  | 'RUN_FAILED';
+  | 'RUN_FAILED'
+  | 'RUN_CANCELLED';
 
 export interface RunEvent {
   id: string;
@@ -120,6 +121,7 @@ const EVENT_LABEL_KEYS: Record<RunEventType, TranslationKey> = {
   CHANGES_PROPOSED: 'runs.event.CHANGES_PROPOSED',
   RUN_COMPLETED: 'runs.event.RUN_COMPLETED',
   RUN_FAILED: 'runs.event.RUN_FAILED',
+  RUN_CANCELLED: 'runs.event.RUN_CANCELLED',
 };
 
 /** Translated event-type label, falling back to the raw type for unknown ones. */

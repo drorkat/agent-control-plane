@@ -275,6 +275,7 @@ const en = {
   'runs.event.MODEL_RESPONSE': 'Model responded',
   'runs.event.RUN_COMPLETED': 'Run completed',
   'runs.event.RUN_FAILED': 'Run failed',
+  'runs.event.RUN_CANCELLED': 'Run cancelled',
   'runs.event.TOOL_EXECUTED': 'Tool executed',
   'runs.event.APPROVAL_REQUESTED': 'Approval requested',
   'runs.event.APPROVAL_RECEIVED': 'Approval received',
@@ -290,6 +291,11 @@ const en = {
   'runs.starting': 'Starting…',
   'runs.noAgentHint': 'Assign an agent first',
   'runs.startError': 'Failed to start run',
+  'runs.cancel': 'Cancel run',
+  'runs.cancelling': 'Cancelling…',
+  'runs.retry': 'Retry',
+  'runs.retrying': 'Retrying…',
+  'runs.actionError': 'Action failed',
 
   // ── approvals ───────────────────────────────────────────────────────────
   'approvals.title': 'Approvals',
@@ -823,6 +829,7 @@ const he: Record<TranslationKey, string> = {
   'runs.event.MODEL_RESPONSE': 'המודל הגיב',
   'runs.event.RUN_COMPLETED': 'הריצה הושלמה',
   'runs.event.RUN_FAILED': 'הריצה נכשלה',
+  'runs.event.RUN_CANCELLED': 'הריצה בוטלה',
   'runs.event.TOOL_EXECUTED': 'הכלי הופעל',
   'runs.event.APPROVAL_REQUESTED': 'התבקש אישור',
   'runs.event.APPROVAL_RECEIVED': 'התקבל אישור',
@@ -838,6 +845,11 @@ const he: Record<TranslationKey, string> = {
   'runs.starting': 'מתחיל…',
   'runs.noAgentHint': 'שייך סוכן תחילה',
   'runs.startError': 'הפעלת הריצה נכשלה',
+  'runs.cancel': 'בטל ריצה',
+  'runs.cancelling': 'מבטל…',
+  'runs.retry': 'הרץ שוב',
+  'runs.retrying': 'מריץ שוב…',
+  'runs.actionError': 'הפעולה נכשלה',
 
   // ── approvals ───────────────────────────────────────────────────────────
   'approvals.title': 'אישורים',

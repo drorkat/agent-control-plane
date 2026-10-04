@@ -35,4 +35,18 @@ export class RunsController {
   findOne(@Param('id') id: string) {
     return this.runs.findOne(id);
   }
+
+  // Cancel a run that is still in flight (running or waiting for approval).
+  @Post(':id/cancel')
+  @Roles('owner', 'admin', 'member')
+  cancel(@Param('id') id: string) {
+    return this.runs.cancel(id);
+  }
+
+  // Retry a finished run: start a fresh run for the same task + agent.
+  @Post(':id/retry')
+  @Roles('owner', 'admin', 'member')
+  retry(@Param('id') id: string) {
+    return this.runs.retry(id);
+  }
 }

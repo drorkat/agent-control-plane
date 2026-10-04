@@ -832,6 +832,65 @@ export class RunsService {
     });
   }
 
+  /**
+   * Cancel a run that is still in flight (running or waiting_approval). Records a
+   * RUN_CANCELLED event, resolves any pending approval for the run (so it does
+   * not dangle), sets the run to `cancelled`, and returns the agent to idle. A
+   * finished run (completed / failed / already cancelled) is not cancellable.
+   */
+  async cancel(runId: string) {
+    const run = await this.prisma.run.findFirst({
+      where: { id: runId, organizationId: currentOrgId() },
+    });
+    if (!run) {
+      throw new NotFoundException(`Run "${runId}" not found`);
+    }
+    if (run.status !== 'running' && run.status !== 'waiting_approval') {
+      throw new BadRequestException(
+        'Only a running or awaiting-approval run can be cancelled',
+      );
+    }
+    await this.prisma.approval.updateMany({
+      where: { runId, organizationId: currentOrgId(), status: 'pending' },
+      data: {
+        status: 'rejected',
+        resolvedAt: new Date(),
+        reason: 'Run cancelled',
+      },
+    });
+    await this.addEvent(runId, 'RUN_CANCELLED');
+    await this.prisma.run.update({
+      where: { id: runId },
+      data: { status: 'cancelled', completedAt: new Date() },
+    });
+    await this.prisma.agent.update({
+      where: { id: run.agentId },
+      data: { status: 'idle' },
+    });
+    return this.findOne(runId);
+  }
+
+  /**
+   * Retry a run: start a fresh run for the same task + agent. Only a finished run
+   * (completed / failed / cancelled) can be retried; an in-flight run must be
+   * cancelled first. Returns the NEW run.
+   */
+  async retry(runId: string) {
+    const run = await this.prisma.run.findFirst({
+      where: { id: runId, organizationId: currentOrgId() },
+    });
+    if (!run) {
+      throw new NotFoundException(`Run "${runId}" not found`);
+    }
+    if (!run.taskId) {
+      throw new BadRequestException('This run has no task to retry');
+    }
+    if (run.status === 'running' || run.status === 'waiting_approval') {
+      throw new BadRequestException('Cancel the run before retrying it');
+    }
+    return this.start(run.taskId, run.agentId);
+  }
+
   /** A single run scoped to the default org (404), with its events in order. */
   async findOne(id: string) {
     const run = await this.prisma.run.findFirst({

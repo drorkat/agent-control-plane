@@ -74,9 +74,15 @@ import { HealthController } from './health/health.controller';
     ThrottlerModule.forRootAsync({
       useFactory: () => {
         const throttlers = [{ ttl: 60_000, limit: 300 }];
+        // Escape hatch for the e2e suite (which creates many accounts from one
+        // IP) and for local load-testing: THROTTLE_DISABLED=1 makes the guard
+        // wave every request through. `skipIf` is evaluated by the guard itself,
+        // so it short-circuits even this globally-registered APP_GUARD. The flag
+        // is unset in production, so the limits above stay fully enforced.
+        const skipIf = () => process.env.THROTTLE_DISABLED === '1';
         const url = process.env.REDIS_URL;
         if (!url) {
-          return { throttlers };
+          return { throttlers, skipIf };
         }
         const client = new Redis(url);
         // Never let a Redis hiccup crash the process; ioredis retries on its own.
@@ -86,6 +92,7 @@ import { HealthController } from './health/health.controller';
         });
         return {
           throttlers,
+          skipIf,
           storage: new ThrottlerStorageRedisService(client),
         };
       },

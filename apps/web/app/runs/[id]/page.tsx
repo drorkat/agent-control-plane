@@ -2,12 +2,13 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import {
   Activity,
   ArrowDownToLine,
   ArrowLeft,
   ArrowUpFromLine,
+  Ban,
   Bot,
   CalendarCheck,
   CalendarClock,
@@ -19,7 +20,9 @@ import {
   GitPullRequest,
   Hash,
   ListTodo,
+  Loader2,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   Terminal,
   Timer,
@@ -207,6 +210,43 @@ function RunView({
   const taskTitle = run.task?.title ?? t('runs.unknownTask');
   const taskId = run.task?.id ?? run.taskId;
 
+  const router = useRouter();
+  const [busy, setBusy] = React.useState<null | 'cancel' | 'retry'>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  // In flight → cancellable; finished → retryable. The API enforces the same
+  // (member+); a viewer who somehow hits it gets an error shown below.
+  const canCancel =
+    run.status === 'running' || run.status === 'waiting_approval';
+  const canRetry =
+    run.status === 'completed' ||
+    run.status === 'failed' ||
+    run.status === 'cancelled';
+
+  async function handleCancel() {
+    setBusy('cancel');
+    setActionError(null);
+    try {
+      await api.post(`/runs/${run.id}/cancel`);
+      onRefresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('runs.actionError'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleRetry() {
+    setBusy('retry');
+    setActionError(null);
+    try {
+      const created = await api.post<{ id: string }>(`/runs/${run.id}/retry`);
+      router.push(`/runs/${created.id}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('runs.actionError'));
+      setBusy(null);
+    }
+  }
+
   return (
     <>
       {/* Header */}
@@ -230,10 +270,55 @@ function RunView({
             </div>
           </div>
         </div>
-        <Button variant="secondary" size="md" onClick={onRefresh} disabled={refreshing}>
-          <RefreshCw className={cn(refreshing && 'animate-spin')} />
-          {t('runs.refresh')}
-        </Button>
+        <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {canCancel && (
+              <Button
+                variant="danger"
+                size="md"
+                onClick={handleCancel}
+                disabled={busy !== null}
+              >
+                {busy === 'cancel' ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Ban />
+                )}
+                {busy === 'cancel' ? t('runs.cancelling') : t('runs.cancel')}
+              </Button>
+            )}
+            {canRetry && (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={handleRetry}
+                disabled={busy !== null}
+              >
+                {busy === 'retry' ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <RotateCcw />
+                )}
+                {busy === 'retry' ? t('runs.retrying') : t('runs.retry')}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={onRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn(refreshing && 'animate-spin')} />
+              {t('runs.refresh')}
+            </Button>
+          </div>
+          {actionError && (
+            <p className="flex items-center gap-1.5 text-xs text-danger sm:justify-end">
+              <TriangleAlert className="size-3.5 shrink-0" />
+              {actionError}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Failure callout */}

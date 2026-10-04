@@ -1,6 +1,5 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -23,10 +22,10 @@ describe('ACP API (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      // Rate limiting is verified elsewhere; disable it here so the many logins
-      // across these tests never trip the auth throttle and flake.
-      .overrideGuard(ThrottlerGuard)
-      .useValue({ canActivate: () => true })
+      // Rate limiting is verified elsewhere and turned off for this run via
+      // THROTTLE_DISABLED=1 (set in setup-e2e.ts, honoured by ThrottlerModule's
+      // `skipIf`), so the many signups across these tests never trip the auth
+      // throttle and flake.
       // Don't start the background scheduler timer during tests.
       .overrideProvider(SchedulerService)
       .useValue({ onModuleInit() {}, onModuleDestroy() {} })
@@ -292,6 +291,67 @@ describe('ACP API (e2e)', () => {
         | undefined;
       expect(result?.merged).toBe(true);
       expect(result?.pullRequest).toBe(7);
+    });
+
+    it('cancels an in-flight run and resolves its pending approval', async () => {
+      const { agent } = await signupOwner();
+      const run = await startRepoRun(agent, 'Improve the docs');
+      expect(run.status).toBe('waiting_approval');
+
+      const cancelled = (
+        await agent.post(`/api/runs/${run.id}/cancel`).expect(201)
+      ).body;
+      expect(cancelled.status).toBe('cancelled');
+      expect((cancelled.events as Ev[]).map((e) => e.type)).toContain(
+        'RUN_CANCELLED',
+      );
+
+      // The pending approval must not dangle after the run is cancelled.
+      const pending = (
+        await agent.get('/api/approvals?status=pending').expect(200)
+      ).body as Array<{ run?: { id: string } }>;
+      expect(pending.some((a) => a.run?.id === run.id)).toBe(false);
+
+      // A finished run cannot be cancelled again.
+      await agent.post(`/api/runs/${run.id}/cancel`).expect(400);
+    });
+
+    it('retries a finished run as a new run; refuses to retry an in-flight one', async () => {
+      const { agent } = await signupOwner();
+      // A no-repo run auto-completes.
+      const project = (
+        await agent.post('/api/projects').send({ name: `P-${uniq()}` }).expect(201)
+      ).body;
+      const ag = (
+        await agent
+          .post('/api/agents')
+          .send({ name: 'Planner', provider: 'mock', model: 'mock-1' })
+          .expect(201)
+      ).body;
+      const task = (
+        await agent
+          .post('/api/tasks')
+          .send({ title: 'Plan it', projectId: project.id })
+          .expect(201)
+      ).body;
+      const run = (
+        await agent
+          .post('/api/runs')
+          .send({ taskId: task.id, agentId: ag.id })
+          .expect(201)
+      ).body;
+      expect(run.status).toBe('completed');
+
+      const retried = (
+        await agent.post(`/api/runs/${run.id}/retry`).expect(201)
+      ).body;
+      expect(retried.id).not.toBe(run.id);
+      expect(retried.taskId).toBe(task.id);
+
+      // An in-flight (awaiting approval) run cannot be retried — cancel it first.
+      const wip = await startRepoRun(agent, 'Work in progress');
+      expect(wip.status).toBe('waiting_approval');
+      await agent.post(`/api/runs/${wip.id}/retry`).expect(400);
     });
   });
 
