@@ -251,6 +251,13 @@ describe('ACP API (e2e)', () => {
       const types = events.map((e) => e.type);
       expect(types).not.toContain('APPROVAL_REQUESTED');
       expect(types).not.toContain('RUN_COMPLETED');
+      // The block is recorded as a RUN_FAILED with a human-readable reason, so
+      // the run detail shows WHY it failed instead of a generic message.
+      expect(types).toContain('RUN_FAILED');
+      const failed = events.find((e) => e.type === 'RUN_FAILED');
+      const message = String(failed?.payload?.message ?? '');
+      expect(message).toContain('delete_data');
+      expect(message).toMatch(/blocked/i);
     });
 
     it('parks a high-risk action at high risk, then executes it on approval (merge_pull_request → approval/high)', async () => {

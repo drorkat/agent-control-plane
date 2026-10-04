@@ -262,6 +262,12 @@ export class RunsService {
 
       if (decision === 'blocked') {
         await this.addEvent(run.id, 'TOOL_BLOCKED', { action });
+        // Record a RUN_FAILED with a human-readable reason, like every other
+        // failure path. Without it the run detail shows the generic "failed
+        // without an error message" instead of why the gateway refused it.
+        await this.addEvent(run.id, 'RUN_FAILED', {
+          message: `Blocked by the Tool Gateway: the action "${action}" is not permitted (${risk} risk).`,
+        });
         this.emit(
           'run.failed',
           { runId: run.id, task: task.title, reason: 'blocked_by_policy' },
