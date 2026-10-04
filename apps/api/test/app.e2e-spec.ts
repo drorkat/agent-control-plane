@@ -391,6 +391,38 @@ describe('ACP API (e2e)', () => {
     });
   });
 
+  describe('invitations', () => {
+    it('issues an invite (email best-effort), lists it, and previews it by token', async () => {
+      const { agent } = await signupOwner();
+      const email = `invitee-${uniq()}@e2e.local`;
+
+      // Creating the invite also triggers a best-effort email. With no SMTP
+      // configured in the test env it uses the console transport, so this
+      // proves the mail wiring never blocks invite creation.
+      const invite = (
+        await agent
+          .post('/api/invitations')
+          .send({ email, role: 'member' })
+          .expect(201)
+      ).body;
+      expect(invite.email).toBe(email);
+      expect(invite.token).toEqual(expect.any(String));
+
+      const pending = (
+        await agent.get('/api/invitations').expect(200)
+      ).body as Array<{ email: string }>;
+      expect(pending.some((i) => i.email === email)).toBe(true);
+
+      // The public token preview resolves the invite without any org context.
+      const preview = (
+        await request(server).get(`/api/invitations/${invite.token}`).expect(200)
+      ).body;
+      expect(preview.email).toBe(email);
+      expect(preview.role).toBe('member');
+      expect(preview.organizationName).toEqual(expect.any(String));
+    });
+  });
+
   describe('row-level security (defense-in-depth)', () => {
     it('blocks cross-tenant reads at the database when the org GUC is set', async () => {
       // Seed two orgs with a project each directly — this is a database-level

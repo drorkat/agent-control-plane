@@ -2,11 +2,13 @@ import {
   ConflictException,
   GoneException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailerService } from '../mailer/mailer.service';
 import { currentOrgId } from '../common/tenant';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
@@ -69,7 +71,12 @@ const BCRYPT_ROUNDS = 10;
 
 @Injectable()
 export class InvitationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(InvitationsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailer: MailerService,
+  ) {}
 
   /**
    * Issue an invitation for the current org. The email is normalized and rejected
@@ -102,7 +109,7 @@ export class InvitationsService {
       Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    return this.prisma.invitation.create({
+    const invitation = await this.prisma.invitation.create({
       data: {
         organizationId,
         email,
@@ -113,6 +120,60 @@ export class InvitationsService {
       },
       select: SAFE_SELECT,
     });
+
+    // Email the invitee their accept link. Best-effort: a mail failure must not
+    // fail the invite — the link is still returned here and shown in the UI.
+    await this.sendInviteEmail(invitation, organizationId);
+
+    return invitation;
+  }
+
+  /** The web origin the accept link points at (operator-configured; dev default). */
+  private inviteBaseUrl(): string {
+    const explicit = process.env.APP_BASE_URL?.trim();
+    if (explicit) {
+      return explicit.replace(/\/+$/, '');
+    }
+    const webOrigin = (process.env.WEB_ORIGIN ?? '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)[0];
+    return (webOrigin ?? 'http://localhost:3000').replace(/\/+$/, '');
+  }
+
+  /**
+   * Send the invitation email (best-effort; wrapped so nothing here can break the
+   * surrounding invite creation). The accept link carries the raw token, which is
+   * the invitation's only credential — exactly what the admin would otherwise
+   * copy by hand.
+   */
+  private async sendInviteEmail(
+    invitation: SafeInvitation,
+    organizationId: string,
+  ): Promise<void> {
+    try {
+      const organization = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { name: true },
+      });
+      const orgName = organization?.name ?? 'your team';
+      const url = `${this.inviteBaseUrl()}/accept-invite?token=${invitation.token}`;
+      await this.mailer.send({
+        to: invitation.email,
+        subject: `You're invited to ${orgName} on Agent Control Plane`,
+        text:
+          `You have been invited to join ${orgName} on Agent Control Plane ` +
+          `with the role "${invitation.role}".\n\n` +
+          `Accept your invitation:\n${url}\n\n` +
+          `This link expires on ${invitation.expiresAt.toUTCString()}. ` +
+          `If you were not expecting this, you can ignore this email.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Could not send invite email to ${invitation.email}: ${message}`,
+      );
+    }
   }
 
   /**

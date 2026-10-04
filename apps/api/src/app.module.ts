@@ -8,6 +8,7 @@ import { trace } from '@opentelemetry/api';
 import { PrismaModule } from './prisma/prisma.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { CommonModule } from './common/common.module';
+import { MailerModule } from './mailer/mailer.module';
 import { ProjectsModule } from './projects/projects.module';
 import { AgentsModule } from './agents/agents.module';
 import { TasksModule } from './tasks/tasks.module';
@@ -100,6 +101,7 @@ import { HealthController } from './health/health.controller';
     MetricsModule,
     PrismaModule,
     CommonModule,
+    MailerModule,
     AuthModule,
     ProjectsModule,
     AgentsModule,
