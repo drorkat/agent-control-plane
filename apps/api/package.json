@@ -12,6 +12,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "reencrypt-secrets": "nest build && node ./scripts/reencrypt-secrets.mjs",
     "db:rls": "nest build && node ./scripts/apply-rls.mjs",
+    "db:rls-role": "node ./scripts/create-app-role.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",

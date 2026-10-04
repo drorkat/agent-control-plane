@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../mailer/mailer.service';
+import { runInTenantTx, runUnscoped } from '../prisma/rls-extension';
 import { currentOrgId } from '../common/tenant';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
@@ -90,7 +91,11 @@ export class InvitationsService {
   ): Promise<SafeInvitation> {
     const email = dto.email.trim().toLowerCase();
 
-    const existingUser = await this.prisma.user.findUnique({ where: { email } });
+    // Email uniqueness is global (across every org), so this check must see all
+    // orgs even under RLS enforcement — read it unscoped.
+    const existingUser = await runUnscoped(this.prisma, (tx) =>
+      tx.user.findUnique({ where: { email } }),
+    );
     if (existingUser) {
       throw new ConflictException('That email already has an account');
     }
@@ -237,10 +242,11 @@ export class InvitationsService {
   async accept(token: string, dto: AcceptInvitationDto): Promise<SafeUser> {
     const invitation = await this.loadUsableInvitation(token);
 
-    // The email may have been claimed between issuing and accepting.
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: invitation.email },
-    });
+    // The email may have been claimed between issuing and accepting. Global
+    // check, so read unscoped (see create()).
+    const existingUser = await runUnscoped(this.prisma, (tx) =>
+      tx.user.findUnique({ where: { email: invitation.email } }),
+    );
     if (existingUser) {
       throw new ConflictException('That email already has an account');
     }
@@ -248,29 +254,37 @@ export class InvitationsService {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const name = dto.name?.trim() || null;
 
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          organizationId: invitation.organizationId,
-          email: invitation.email,
-          name,
-          passwordHash,
-          role: invitation.role,
-        },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          organizationId: true,
-        },
-      });
-      await tx.invitation.update({
-        where: { id: invitation.id },
-        data: { acceptedAt: new Date() },
-      });
-      return user;
-    });
+    // Runs unauthenticated, but writes into the invitation's org — so under RLS
+    // enforcement the GUC must be that org (not the request default) for the
+    // INSERT to pass WITH CHECK. runInTenantTx sets it; it is a plain transaction
+    // when enforcement is off.
+    return runInTenantTx(
+      this.prisma,
+      async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            organizationId: invitation.organizationId,
+            email: invitation.email,
+            name,
+            passwordHash,
+            role: invitation.role,
+          },
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            organizationId: true,
+          },
+        });
+        await tx.invitation.update({
+          where: { id: invitation.id },
+          data: { acceptedAt: new Date() },
+        });
+        return user;
+      },
+      invitation.organizationId,
+    );
   }
 
   /**
@@ -280,9 +294,12 @@ export class InvitationsService {
    * validate identically.
    */
   private async loadUsableInvitation(token: string) {
-    const invitation = await this.prisma.invitation.findUnique({
-      where: { token },
-    });
+    // A token lookup is inherently cross-org: the caller is not yet a member and
+    // the unguessable token is the credential. Read unscoped so RLS enforcement
+    // does not hide the row behind the request's (default) org.
+    const invitation = await runUnscoped(this.prisma, (tx) =>
+      tx.invitation.findUnique({ where: { token } }),
+    );
     if (!invitation) {
       throw new NotFoundException('Invitation not found');
     }

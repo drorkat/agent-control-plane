@@ -192,3 +192,77 @@ jobs:
         run: |
           echo '--- API ---'; tail -n 100 /tmp/acp-api.log || true
           echo '--- WEB ---'; tail -n 100 /tmp/acp-web.log || true
+
+  rls-enforcement:
+    name: RLS enforcement (non-superuser role)
+    runs-on: ubuntu-latest
+
+    # Proves tenant isolation is actually ENFORCED at the database (DB_RLS=1):
+    # the owner installs the schema + policies + app role, then the whole e2e
+    # suite runs as that NON-superuser role. Every request sets its org GUC via
+    # the client extension, so same-tenant work succeeds while the database
+    # refuses cross-tenant rows. See docs/RLS.md.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: acp
+          POSTGRES_PASSWORD: acp
+          POSTGRES_DB: acp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Job-level DATABASE_URL is the privileged OWNER connection, used for the
+    # setup steps (migrate / RLS / role). The test step overrides it with the
+    # restricted app role.
+    env:
+      DATABASE_URL: postgresql://acp:acp@localhost:5432/acp_test?schema=public
+      AUTH_SECRET: ci-e2e-auth-secret-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      ENCRYPTION_KEY: ci-e2e-encryption-key-bbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      AI_MOCK: '1'
+      GITHUB_MOCK: '1'
+      WEBHOOK_ALLOW_PRIVATE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema apps/api/prisma/schema.prisma
+
+      # Owner installs the schema and the RLS policies (ALTER TABLE needs the owner).
+      - name: Apply migrations
+        run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+
+      - name: Install RLS policies
+        run: npm run db:rls -w @acp/api
+
+      # Owner creates the restricted (NOSUPERUSER NOBYPASSRLS) application role.
+      - name: Provision application role
+        env:
+          APP_DB_USER: acp_app
+          APP_DB_PASSWORD: acp_app_ci_pw
+        run: npm run db:rls-role -w @acp/api
+
+      # Run the whole suite AS the restricted role with enforcement on. The
+      # suite's beforeAll tolerates not being able to (re)install RLS as a
+      # non-owner, and the raw-SQL policy probe is skipped under DB_RLS=1.
+      - name: Test (API e2e, enforced)
+        env:
+          DATABASE_URL: postgresql://acp_app:acp_app_ci_pw@localhost:5432/acp_test?schema=public
+          DB_RLS: '1'
+        run: npm run test:e2e -w @acp/api

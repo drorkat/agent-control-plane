@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { runInManagedTx, runUnscoped, setTenantGuc } from '../prisma/rls-extension';
 
 /**
  * Client-safe projection of a user. It deliberately omits `passwordHash` (and
@@ -61,7 +62,11 @@ export class AuthService {
   ): Promise<{ user: SafeUser; token: string }> {
     const email = input.email.trim().toLowerCase();
 
-    const existing = await this.prisma.user.findUnique({ where: { email } });
+    // Email uniqueness is global; this pre-check must see every org even under
+    // RLS enforcement (signup has no org context yet).
+    const existing = await runUnscoped(this.prisma, (tx) =>
+      tx.user.findUnique({ where: { email } }),
+    );
     if (existing) {
       throw new ConflictException('An account with that email already exists');
     }
@@ -72,16 +77,27 @@ export class AuthService {
       input.organizationName?.trim() || `${name || email}'s workspace`;
     const slug = await this.uniqueSlug(organizationName);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email,
-        name,
-        passwordHash,
-        role: 'owner',
-        organization: {
-          create: { name: organizationName, slug },
+    // Create the org, then its owner — atomically. Under RLS enforcement the
+    // owner User insert must carry a GUC equal to its (brand-new) org, which is
+    // only known after the org row exists; so we create the org first, set the
+    // GUC to it, then create the user. Organizations are not RLS-scoped, so the
+    // first insert is unaffected. With enforcement off this is just a normal
+    // transaction. (currentOrgId() is the default org during unauthenticated
+    // signup, which is why the nested create would otherwise fail WITH CHECK.)
+    const user = await runInManagedTx(this.prisma, async (tx) => {
+      const organization = await tx.organization.create({
+        data: { name: organizationName, slug },
+      });
+      await setTenantGuc(tx, organization.id);
+      return tx.user.create({
+        data: {
+          email,
+          name,
+          passwordHash,
+          role: 'owner',
+          organizationId: organization.id,
         },
-      },
+      });
     });
 
     return {
@@ -97,7 +113,12 @@ export class AuthService {
    */
   async login(input: LoginInput): Promise<{ user: SafeUser; token: string }> {
     const email = input.email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    // Authentication precedes any org context, and the user may belong to any
+    // org, so resolve them unscoped (by their globally-unique email). RLS still
+    // governs every scoped query the request makes once the org is established.
+    const user = await runUnscoped(this.prisma, (tx) =>
+      tx.user.findUnique({ where: { email } }),
+    );
     if (!user || !(await bcrypt.compare(input.password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid email or password');
     }
