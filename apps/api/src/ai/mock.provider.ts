@@ -70,7 +70,11 @@ function buildLoopAction(prompt: string): string {
   // the blocked / approval-high tiers are exercised deterministically.
   const requested = requestedActionMarker(prompt);
   if (requested) {
-    return JSON.stringify({ tool: 'request_action', action: requested });
+    return JSON.stringify({
+      tool: 'request_action',
+      action: requested.action,
+      ...(requested.target ? { target: requested.target } : {}),
+    });
   }
 
   const done = countProgressSteps(prompt);
@@ -112,15 +116,19 @@ function buildLoopAction(prompt: string): string {
 }
 
 /**
- * Detect a governed-action marker in the prompt: `[[action:<name>]]`. A task can
- * embed e.g. `[[action:delete_data]]` or `[[action:merge_pull_request]]` to make
- * the mock request that governed action instead of proposing edits, so the
- * gateway's blocked / high-risk tiers can be exercised deterministically in dev
- * and tests. The name is lower-cased and limited to the policy-key charset.
+ * Detect a governed-action marker in the prompt: `[[action:<name>]]` or
+ * `[[action:<name>:<target>]]`. A task can embed e.g. `[[action:delete_data]]`
+ * or `[[action:merge_pull_request:42]]` to make the mock request that governed
+ * action (optionally naming a subject, like the PR number to merge) instead of
+ * proposing edits, so the gateway's blocked / high-risk tiers can be exercised
+ * deterministically in dev and tests. The name is lower-cased.
  */
-function requestedActionMarker(prompt: string): string | null {
-  const m = prompt.match(/\[\[action:([a-z_]+)\]\]/i);
-  return m ? m[1].toLowerCase() : null;
+function requestedActionMarker(
+  prompt: string,
+): { action: string; target?: string } | null {
+  const m = prompt.match(/\[\[action:([a-z_]+)(?::([A-Za-z0-9_/.-]+))?\]\]/i);
+  if (!m) return null;
+  return { action: m[1].toLowerCase(), ...(m[2] ? { target: m[2] } : {}) };
 }
 
 /** Count the numbered step lines in the prompt's "## Progress so far" section. */

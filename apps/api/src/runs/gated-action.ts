@@ -7,6 +7,8 @@ import { ChangeProposal } from './change-proposal';
  */
 export const READ_REPO_ACTION = 'read_repo';
 export const OPEN_PR_ACTION = 'open_pull_request';
+/** A human-approved merge of an existing pull request (executed for real). */
+export const MERGE_PR_ACTION = 'merge_pull_request';
 
 /**
  * Decide which tool action the Tool Gateway should evaluate for a finished run,

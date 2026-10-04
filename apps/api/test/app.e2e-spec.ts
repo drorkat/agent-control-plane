@@ -260,11 +260,12 @@ describe('ACP API (e2e)', () => {
       expect(message).toMatch(/blocked/i);
     });
 
-    it('parks a high-risk action at high risk, then executes it on approval (merge_pull_request → approval/high)', async () => {
+    it('parks a high-risk merge at high risk, then merges the target PR on approval (merge_pull_request → approval/high)', async () => {
       const { agent } = await signupOwner();
+      // The task names the PR to merge via the action target: merge_pull_request:7
       const run = await startRepoRun(
         agent,
-        'Merge the release PR [[action:merge_pull_request]]',
+        'Merge the release PR [[action:merge_pull_request:7]]',
       );
 
       expect(run.status).toBe('waiting_approval');
@@ -273,9 +274,10 @@ describe('ACP API (e2e)', () => {
       );
       expect(requested?.payload?.action).toBe('merge_pull_request');
       expect(requested?.payload?.risk).toBe('high');
+      expect(requested?.payload?.target).toBe('7');
 
-      // Approving must resume as the SAME governed action (recorded executed),
-      // never silently open a pull request instead.
+      // Approving must resume as the SAME governed action and actually MERGE the
+      // target PR (via the mock GitHub client here; a real token merges for real).
       const approvalId = requested?.payload?.approvalId as string;
       await agent.post(`/api/approvals/${approvalId}/approve`).expect(201);
 
@@ -288,7 +290,8 @@ describe('ACP API (e2e)', () => {
       const result = executed?.payload?.result as
         | Record<string, unknown>
         | undefined;
-      expect(result?.note).toBe('approved by reviewer');
+      expect(result?.merged).toBe(true);
+      expect(result?.pullRequest).toBe(7);
     });
   });
 

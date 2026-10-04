@@ -31,6 +31,16 @@ describe('MockProvider', () => {
     });
   });
 
+  it('captures an optional target from the marker', async () => {
+    expect(
+      await loopAction('Merge it [[action:merge_pull_request:42]]'),
+    ).toEqual({
+      tool: 'request_action',
+      action: 'merge_pull_request',
+      target: '42',
+    });
+  });
+
   it('walks the normal loop (list_files first) when there is no marker', async () => {
     expect(
       await loopAction('Add a feature\n\n## Progress so far\n(nothing yet)'),

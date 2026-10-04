@@ -29,7 +29,9 @@ are yours (BYOK) and are encrypted at rest.
 - **Tool Gateway** — every proposed action is classified `auto` / `approval` /
   `blocked` with a risk level; unknown actions fail safe to "requires approval".
 - **Human approvals** — risky actions (open/merge PR, deploy) park the run until
-  a reviewer approves or rejects.
+  a reviewer approves or rejects. On approval the action runs for real: opening a
+  PR opens one, and approving a `merge_pull_request` merges the target PR via the
+  connected GitHub token.
 - **Immutable audit log** — who/what did which action on which resource, when.
 
 **Access**

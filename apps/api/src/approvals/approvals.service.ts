@@ -109,6 +109,7 @@ export class ApprovalsService {
       true,
       userId,
       approval.actionType,
+      approval.resourceId ?? undefined,
     );
 
     return updated;
@@ -149,6 +150,7 @@ export class ApprovalsService {
       false,
       userId,
       approval.actionType,
+      approval.resourceId ?? undefined,
     );
 
     return updated;
@@ -163,6 +165,7 @@ export class ApprovalsService {
     id: string;
     runId: string;
     actionType: string;
+    resourceId: string | null;
   }> {
     const approval = await this.prisma.approval.findFirst({
       where: { id, organizationId: currentOrgId() },
@@ -180,6 +183,7 @@ export class ApprovalsService {
       id: approval.id,
       runId: approval.runId,
       actionType: approval.actionType,
+      resourceId: approval.resourceId,
     };
   }
 }

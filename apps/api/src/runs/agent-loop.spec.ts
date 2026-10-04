@@ -79,6 +79,14 @@ describe('parseAgentAction', () => {
     ).toEqual({ tool: 'request_action', action: 'merge_pull_request' });
   });
 
+  it('parses a request_action with an optional target', () => {
+    expect(
+      parseAgentAction(
+        '{"tool":"request_action","action":"merge_pull_request","target":"42"}',
+      ),
+    ).toEqual({ tool: 'request_action', action: 'merge_pull_request', target: '42' });
+  });
+
   it('trims whitespace around a request_action action name', () => {
     expect(
       parseAgentAction('{"tool":"request_action","action":"  delete_data  "}'),

@@ -15,7 +15,7 @@ import { OpenPrFile, OpenPrInput } from '../github/github-client.interface';
 import { RepoContextService } from './repo-context.service';
 import { ChangeProposal } from './change-proposal';
 import { buildAgentLoopSystemPrompt, runAgentLoop } from './agent-loop';
-import { OPEN_PR_ACTION, gatedAction } from './gated-action';
+import { MERGE_PR_ACTION, OPEN_PR_ACTION, gatedAction } from './gated-action';
 import { PaginationQuery, paginationArgs } from '../common/pagination';
 import {
   WebhookDispatcher,
@@ -127,6 +127,7 @@ export class RunsService {
       let outputTokens = 0;
       let proposal: ChangeProposal | null = null;
       let requestedAction: string | undefined;
+      let requestedTarget: string | undefined;
       let beforeByPath = new Map<string, string>();
 
       const client =
@@ -171,6 +172,7 @@ export class RunsService {
         outputTokens = loop.outputTokens;
         proposal = loop.proposal;
         requestedAction = loop.requestedAction;
+        requestedTarget = loop.requestedTarget;
         beforeByPath = loop.readFiles;
       } else {
         // No repo: a single context-free planning call.
@@ -300,12 +302,18 @@ export class RunsService {
             riskLevel: risk,
             status: 'pending',
             requestedAt: new Date(),
+            // Carry the action's subject (e.g. the PR number to merge) so resume()
+            // can execute it against the right resource once a human approves.
+            ...(requestedTarget
+              ? { resourceType: 'pull_request', resourceId: requestedTarget }
+              : {}),
           },
         });
         await this.addEvent(run.id, 'APPROVAL_REQUESTED', {
           approvalId: approval.id,
           action,
           risk,
+          ...(requestedTarget ? { target: requestedTarget } : {}),
         });
         this.emit(
           'approval.requested',
@@ -406,6 +414,7 @@ export class RunsService {
     approved: boolean,
     resolvedByUserId?: string,
     action: string = OPEN_PR_ACTION,
+    targetRef?: string,
   ) {
     const run = await this.prisma.run.findFirst({
       where: { id: runId, organizationId: currentOrgId() },
@@ -491,31 +500,53 @@ export class RunsService {
         }
       } else {
         // A governed, non-PR action (merge_pull_request, deploy_production, ...)
-        // approved by a human. The gateway's role was the human gate; record the
-        // approved execution and complete the run. We deliberately do not
-        // fabricate a GitHub side effect for an action the run only requested.
-        await this.addEvent(runId, 'TOOL_EXECUTED', {
-          action,
-          result: { executed: true, note: 'approved by reviewer' },
-        });
-        await this.audit.record({
-          actorType: 'user',
-          actorId: resolvedByUserId,
-          action: 'tool.executed',
-          resourceType: 'run',
-          resourceId: runId,
-          metadata: { action },
-        });
-        await this.addEvent(runId, 'RUN_COMPLETED');
-        await this.prisma.run.update({
-          where: { id: runId },
-          data: { status: 'completed', completedAt: new Date() },
-        });
-        this.emit(
-          'run.completed',
-          { runId, status: 'completed' },
-          { type: 'run.completed', title: 'Run completed' },
-        );
+        // approved by a human. merge_pull_request is executed for real against
+        // GitHub (the human approval was the gate); other governed actions have
+        // no external side effect to perform here, so the approval IS the
+        // execution. A real failure (e.g. GitHub refuses the merge) fails the
+        // run cleanly, like the open-PR path.
+        try {
+          const result = await this.executeGovernedAction(run, action, targetRef);
+          await this.addEvent(runId, 'TOOL_EXECUTED', { action, result });
+          await this.audit.record({
+            actorType: 'user',
+            actorId: resolvedByUserId,
+            action: 'tool.executed',
+            resourceType: 'run',
+            resourceId: runId,
+            metadata: { action, result },
+          });
+          await this.addEvent(runId, 'RUN_COMPLETED');
+          await this.prisma.run.update({
+            where: { id: runId },
+            data: { status: 'completed', completedAt: new Date() },
+          });
+          this.emit(
+            'run.completed',
+            { runId, status: 'completed' },
+            { type: 'run.completed', title: 'Run completed' },
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          await this.audit.record({
+            actorType: 'user',
+            actorId: resolvedByUserId,
+            action: 'tool.failed',
+            resourceType: 'run',
+            resourceId: runId,
+            metadata: { action, message },
+          });
+          await this.addEvent(runId, 'RUN_FAILED', { message });
+          await this.prisma.run.update({
+            where: { id: runId },
+            data: { status: 'failed', completedAt: new Date() },
+          });
+          this.emit(
+            'run.failed',
+            { runId, message },
+            { type: 'run.failed', title: 'Run failed', body: message },
+          );
+        }
       }
     } else {
       await this.addEvent(runId, 'APPROVAL_REJECTED');
@@ -667,6 +698,77 @@ export class RunsService {
       ...(typeof pr.number === 'number' ? { number: pr.number } : {}),
     };
     return result;
+  }
+
+  /**
+   * Execute a governed, non-PR action that a human approved. For
+   * merge_pull_request this performs a REAL merge of the target pull request via
+   * the GitHub client (requires a connected token, a linked repo, and a target
+   * PR number — otherwise it records that nothing was merged, without failing
+   * the run). Other governed actions (e.g. deploy_production) have no external
+   * side effect to perform here, so the human approval itself is the execution.
+   * Throws on a real GitHub failure so the caller fails the run cleanly.
+   */
+  private async executeGovernedAction(
+    run: { id: string; taskId: string | null },
+    action: string,
+    targetRef?: string,
+  ): Promise<Prisma.InputJsonObject> {
+    if (action !== MERGE_PR_ACTION) {
+      return { executed: true, action, note: 'Approved by a reviewer.' };
+    }
+
+    const { owner, repo } = await this.resolveRepo(run);
+    const client = owner && repo ? await this.github.forCurrentOrg() : null;
+    if (!client || !owner || !repo) {
+      return {
+        executed: false,
+        action,
+        note: 'Approved, but no GitHub repository is linked (or GitHub is not connected), so no pull request was merged.',
+        ...(targetRef ? { pullRequest: targetRef } : {}),
+      };
+    }
+
+    const prNumber = targetRef ? Number(targetRef) : NaN;
+    if (!Number.isInteger(prNumber) || prNumber <= 0) {
+      return {
+        executed: false,
+        action,
+        note: 'Approved, but no target pull-request number was provided, so nothing was merged.',
+      };
+    }
+
+    // A real merge. A GitHub failure (not mergeable, missing, head changed)
+    // throws and the caller turns it into a failed run.
+    const merged = await client.mergePullRequest(owner, repo, prNumber);
+    return {
+      executed: merged.merged,
+      action,
+      pullRequest: prNumber,
+      merged: merged.merged,
+      ...(merged.sha ? { sha: merged.sha } : {}),
+      note: merged.message ?? 'Pull request merged.',
+    };
+  }
+
+  /** Resolve a run's target repository from its task -> project (or nulls). */
+  private async resolveRepo(run: {
+    taskId: string | null;
+  }): Promise<{ owner: string | null; repo: string | null }> {
+    if (!run.taskId) return { owner: null, repo: null };
+    const task = await this.prisma.task.findFirst({
+      where: { id: run.taskId, organizationId: currentOrgId() },
+      select: { projectId: true },
+    });
+    if (!task) return { owner: null, repo: null };
+    const project = await this.prisma.project.findFirst({
+      where: { id: task.projectId, organizationId: currentOrgId() },
+      select: { repoOwner: true, repoName: true },
+    });
+    return {
+      owner: project?.repoOwner ?? null,
+      repo: project?.repoName ?? null,
+    };
   }
 
   /**

@@ -30,6 +30,15 @@ export interface OpenPrResult {
   number?: number;
 }
 
+/** Outcome of merging a pull request. */
+export interface MergePrResult {
+  merged: boolean;
+  /** The merge commit sha, when GitHub returns one. */
+  sha?: string;
+  /** GitHub's human-readable message (e.g. "Pull Request successfully merged"). */
+  message?: string;
+}
+
 /** A single entry in a repo's file tree. */
 export interface RepoFileRef {
   path: string;
@@ -46,6 +55,12 @@ export interface RepoFileContent {
 export interface GitHubClient {
   verifyToken(): Promise<VerifyResult>;
   openPullRequest(input: OpenPrInput): Promise<OpenPrResult>;
+  /** Merge an open pull request by its number (governed by the Tool Gateway). */
+  mergePullRequest(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<MergePrResult>;
   /** List file paths in the repo (recursive), for the given ref or default branch. */
   listFiles(owner: string, repo: string, ref?: string): Promise<RepoFileRef[]>;
   /** Read one file's decoded UTF-8 content (+ blob sha), or null if it doesn't exist. */

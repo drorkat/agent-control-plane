@@ -26,8 +26,9 @@ export type AgentAction =
   // Request a governed, higher-impact tool action (e.g. merge_pull_request,
   // deploy_production, delete_data). The run engine routes it through the Tool
   // Gateway, so a `blocked` policy refuses it and a higher-risk one parks for a
-  // human — this is what exercises the gateway's non-auto tiers.
-  | { tool: 'request_action'; action: string };
+  // human — this is what exercises the gateway's non-auto tiers. `target` is an
+  // optional subject for the action (e.g. the pull-request number to merge).
+  | { tool: 'request_action'; action: string; target?: string };
 
 /** A recorded step of the loop, for the run's event log. */
 export interface AgentStep {
@@ -46,6 +47,8 @@ export interface AgentLoopResult {
    * the gateway instead of the proposal-derived action.
    */
   requestedAction?: string;
+  /** Optional subject of the requested action (e.g. the PR number to merge). */
+  requestedTarget?: string;
   /** Original content of every file the agent saw (path -> content), for diffs. */
   readFiles: Map<string, string>;
   steps: AgentStep[];
@@ -120,10 +123,22 @@ export function parseAgentAction(text: string): AgentAction | null {
   if (tool === 'request_action') {
     // A governed action the agent wants to take (e.g. merge_pull_request,
     // delete_data). We only need a non-empty action name here; the run engine
-    // routes it through the gateway and decides what happens to it.
+    // routes it through the gateway and decides what happens to it. An optional
+    // `target` names the subject (e.g. the PR number to merge).
     const requested = (obj as { action?: unknown }).action;
     if (typeof requested === 'string' && requested.trim()) {
-      return { tool: 'request_action', action: requested.trim() };
+      const rawTarget = (obj as { target?: unknown }).target;
+      const target =
+        typeof rawTarget === 'string' && rawTarget.trim()
+          ? rawTarget.trim()
+          : typeof rawTarget === 'number'
+            ? String(rawTarget)
+            : undefined;
+      return {
+        tool: 'request_action',
+        action: requested.trim(),
+        ...(target ? { target } : {}),
+      };
     }
     return null;
   }
@@ -180,6 +195,7 @@ export async function runAgentLoop(
   let finalText = '';
   let proposal: ChangeProposal | null = null;
   let requestedAction: string | undefined;
+  let requestedTarget: string | undefined;
   let reads = 0;
 
   for (let i = 0; i < MAX_STEPS; i += 1) {
@@ -223,14 +239,18 @@ export async function runAgentLoop(
       // (blocked → refused, high-risk → parks for a human). This is what makes
       // the gateway's non-auto tiers reachable from a real run.
       requestedAction = action.action;
+      requestedTarget = action.target;
       await opts.onEvent?.('TOOL_REQUESTED', {
         tool: 'request_action',
         action: action.action,
+        ...(action.target ? { target: action.target } : {}),
       });
       steps.push({
         index: steps.length + 1,
         tool: 'request_action',
-        resultSummary: `requested ${action.action}`,
+        resultSummary: action.target
+          ? `requested ${action.action} (${action.target})`
+          : `requested ${action.action}`,
       });
       break;
     }
@@ -330,6 +350,7 @@ export async function runAgentLoop(
   return {
     proposal,
     requestedAction,
+    requestedTarget,
     readFiles,
     steps,
     inputTokens,

@@ -1,5 +1,6 @@
 import {
   GitHubClient,
+  MergePrResult,
   OpenPrFile,
   OpenPrInput,
   OpenPrResult,
@@ -76,6 +77,39 @@ export class RealGitHubClient implements GitHubClient {
       pullRequestUrl: pr.html_url ?? '',
       branch,
       number: pr.number,
+    };
+  }
+
+  /**
+   * Merge an open pull request (PUT /pulls/{n}/merge). GitHub returns
+   * `{ merged, sha, message }`; a non-2xx (e.g. 405 not mergeable, 404 missing,
+   * 409 head changed) throws with the status and GitHub's message — never the
+   * token. The caller (run engine) turns a throw into a failed run.
+   */
+  async mergePullRequest(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+  ): Promise<MergePrResult> {
+    const res = await this.request(
+      'PUT',
+      `/repos/${owner}/${repo}/pulls/${pullNumber}/merge`,
+    );
+    if (!res.ok) {
+      throw await this.githubError(
+        res,
+        `Failed to merge pull request #${pullNumber}`,
+      );
+    }
+    const body = (await res.json()) as {
+      merged?: boolean;
+      sha?: string;
+      message?: string;
+    };
+    return {
+      merged: body.merged === true,
+      sha: body.sha,
+      message: body.message,
     };
   }
 

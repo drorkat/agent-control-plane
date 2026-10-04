@@ -1,5 +1,6 @@
 import {
   GitHubClient,
+  MergePrResult,
   OpenPrInput,
   OpenPrResult,
   RepoFileContent,
@@ -23,6 +24,18 @@ export class MockGitHubClient implements GitHubClient {
       pullRequestUrl: `https://github.com/${input.owner}/${input.repo}/pull/1`,
       branch: input.branch,
       number: 1,
+    };
+  }
+
+  async mergePullRequest(
+    _owner: string,
+    _repo: string,
+    pullNumber: number,
+  ): Promise<MergePrResult> {
+    return {
+      merged: true,
+      sha: `mock-merge-sha-${pullNumber}`,
+      message: 'Pull Request successfully merged (mock)',
     };
   }
 
